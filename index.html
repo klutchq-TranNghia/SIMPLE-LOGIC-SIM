@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mô Phỏng Cổng Logic</title>
+    <title>Mô Phỏng Cổng Logic IEEE - Pan & Zoom Mobile</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -26,10 +26,9 @@
             position: relative;
             z-index: 10;
             gap: 8px;
-            height: 40px; /* Cố định chiều cao cơ sở */
+            height: 40px;
         }
 
-        /* Vùng kéo để xóa */
         #delete-zone {
             position: absolute;
             top: 0; left: 0; right: 0; bottom: 0;
@@ -96,13 +95,11 @@
         .terminal-err { color: #e74c3c; }
 
         .gate { cursor: move; }
-        /* Tắt bôi đen text */
         .gate text, .gate-text { 
             font-size: 13px; font-weight: bold; font-family: monospace; 
             pointer-events: none !important; user-select: none !important; -webkit-user-select: none !important; 
         }
         
-        /* Pin to hơn */
         .pin { cursor: crosshair; stroke: #333; stroke-width: 2.5; transition: all 0.2s; }
         .pin-in { fill: #2ecc71; }
         .pin-out { fill: #e74c3c; }
@@ -151,7 +148,7 @@
     <input type="file" id="fileInput" style="display:none" accept=".json" onchange="loadCircuit(event)">
 
     <span class="guide-text">
-        🤚 Pinch to Zoom | ⌨️ R (Giữ 0.6s) Xoay | 🖱️🖱️ Nháy 2 lần IN | Kéo lên đây Xóa
+        🤚 Pinch to Zoom | 🖱️/👆 Giữ 0.6s Xoay | 🖱️🖱️ Nháy 2 lần IN | Kéo lên Toolbar Xóa
     </span>
     
     <div class="gates-group">
@@ -502,6 +499,9 @@
         group.addEventListener('mouseleave', () => { if(hoveredComponent === comp) hoveredComponent = null; });
         group.innerHTML = config.svg;
 
+        // Vô hiệu hóa chuột phải (contextmenu) để không bị xóa khi giữ lâu trên Mobile
+        group.addEventListener('contextmenu', (e) => { e.preventDefault(); });
+
         let textEl = null;
         if (comp.type === 'INPUT' || comp.type === 'OUTPUT' || comp.type === 'CLOCK') {
             textEl = document.createElementNS("http://www.w3.org/2000/svg", "text");
@@ -535,7 +535,7 @@
             const pinY = config.height * (i + 1) / (config.in + 1);
             const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
             circle.setAttribute("class", "pin pin-in");
-            circle.setAttribute("cx", 0); circle.setAttribute("cy", pinY); circle.setAttribute("r", 9); // Size to
+            circle.setAttribute("cx", 0); circle.setAttribute("cy", pinY); circle.setAttribute("r", 9); 
             const handlePin = (e) => { e.stopPropagation(); handlePinClick(e, comp.id, 'in', i, circle); };
             circle.addEventListener('mousedown', handlePin);
             circle.addEventListener('touchstart', (e) => { e.preventDefault(); handlePin(e); }, {passive: false});
@@ -545,14 +545,12 @@
         if (config.out > 0) {
             const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
             circle.setAttribute("class", "pin pin-out");
-            circle.setAttribute("cx", config.width); circle.setAttribute("cy", config.height / 2); circle.setAttribute("r", 9); // Size to
+            circle.setAttribute("cx", config.width); circle.setAttribute("cy", config.height / 2); circle.setAttribute("r", 9); 
             const handlePinOut = (e) => { e.stopPropagation(); handlePinClick(e, comp.id, 'out', null, circle); };
             circle.addEventListener('mousedown', handlePinOut);
             circle.addEventListener('touchstart', (e) => { e.preventDefault(); handlePinOut(e); }, {passive: false});
             group.appendChild(circle);
         }
-
-        group.addEventListener('contextmenu', (e) => { e.preventDefault(); deleteComponentObj(comp, group); });
 
         function initDrag(e) {
             if (e.target.classList.contains('pin') || e.target.classList.contains('btn-push')) return;
@@ -561,27 +559,33 @@
             const ctm = workspace.getScreenCTM();
             const clientX = e.clientX !== undefined ? e.clientX : e.touches[0].clientX;
             const clientY = e.clientY !== undefined ? e.clientY : e.touches[0].clientY;
+            
+            // Lưu lại vị trí chạm đầu tiên để so sánh có bị trượt tay không
+            comp.dragStartClientX = clientX;
+            comp.dragStartClientY = clientY;
+            
             offset.x = (clientX - ctm.e) / ctm.a - comp.x;
             offset.y = (clientY - ctm.f) / ctm.d - comp.y;
             deleteZone.classList.add('active'); // Mở vùng xóa
         }
 
-        group.addEventListener('mousedown', initDrag);
-        group.addEventListener('touchstart', (e) => {
+        function startHoldTimer(e) {
             initDrag(e);
-            // Rotate với Long Press (0.6s)
             comp.longPressTimer = setTimeout(() => { 
                 rotateComponent(comp); 
-                draggedElement = null; // Huỷ di chuyển nếu họ đã xoay
+                draggedElement = null; // Xoay xong thì hủy lệnh drag
                 deleteZone.classList.remove('active');
             }, 600);
-        }, {passive: false});
+        }
 
-        group.addEventListener('touchmove', () => clearTimeout(comp.longPressTimer) );
+        group.addEventListener('mousedown', startHoldTimer);
+        group.addEventListener('touchstart', startHoldTimer, {passive: false});
 
-        // Double Tap Mobile (Đổi input)
+        group.addEventListener('mouseup', () => { if(comp.longPressTimer) clearTimeout(comp.longPressTimer); });
+        
+        // Xử lý Double Tap Mobile (Đổi input)
         group.addEventListener('touchend', (e) => {
-            clearTimeout(comp.longPressTimer);
+            if(comp.longPressTimer) clearTimeout(comp.longPressTimer);
             let currentTime = new Date().getTime();
             let tapLength = currentTime - (comp.lastTap || 0);
             if (tapLength < 400 && tapLength > 0 && comp.type === 'INPUT') {
@@ -605,6 +609,13 @@
             const ctm = workspace.getScreenCTM();
             const clientX = e.clientX !== undefined ? e.clientX : e.touches[0].clientX;
             const clientY = e.clientY !== undefined ? e.clientY : e.touches[0].clientY;
+            
+            // Nếu người dùng kéo đi lệch quá 5px, ta hủy lệnh xoay 0.6 giây
+            if (Math.abs(clientX - draggedElement.dragStartClientX) > 5 || 
+                Math.abs(clientY - draggedElement.dragStartClientY) > 5) {
+                if(draggedElement.longPressTimer) clearTimeout(draggedElement.longPressTimer);
+            }
+
             draggedElement.x = (clientX - ctm.e) / ctm.a - offset.x;
             draggedElement.y = (clientY - ctm.f) / ctm.d - offset.y;
             const config = gateConfig[draggedElement.type];
@@ -623,7 +634,6 @@
             const zoomAmount = currentDist / initialPinchDist;
             const newScale = initialScale * zoomAmount;
             
-            // Focus zoom ra giữa 2 ngón tay
             const pinchCenterX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
             const pinchCenterY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
             currentPan.x -= (pinchCenterX - currentPan.x) * (newScale / currentScale - 1);
@@ -636,8 +646,10 @@
 
     function handleGlobalEnd(e) { 
         if (draggedElement) {
+            if(draggedElement.longPressTimer) clearTimeout(draggedElement.longPressTimer);
+            
             const dropY = e.clientY !== undefined ? e.clientY : (e.changedTouches ? e.changedTouches[0].clientY : 0);
-            if (dropY < document.getElementById('toolbar').offsetHeight + 10) { // Thả vào khu vực toolbar đỏ -> xóa
+            if (dropY < document.getElementById('toolbar').offsetHeight + 10) { 
                 deleteComponentObj(draggedElement, document.getElementById(draggedElement.id));
             } else if (dragStartPos && (Math.abs(draggedElement.x - dragStartPos.x) > 1 || Math.abs(draggedElement.y - dragStartPos.y) > 1)) {
                 saveState("Di chuyển");
@@ -651,7 +663,10 @@
 
     svg.addEventListener('mousemove', handleGlobalMove); svg.addEventListener('touchmove', handleGlobalMove, {passive: false});
     svg.addEventListener('mouseup', handleGlobalEnd); svg.addEventListener('touchend', handleGlobalEnd);
-    svg.addEventListener('mouseleave', () => { draggedElement = null; clearSelection(); isPanning = false; deleteZone.classList.remove('active'); });
+    svg.addEventListener('mouseleave', () => { 
+        if(draggedElement && draggedElement.longPressTimer) clearTimeout(draggedElement.longPressTimer);
+        draggedElement = null; clearSelection(); isPanning = false; deleteZone.classList.remove('active'); 
+    });
     svg.addEventListener('touchcancel', handleGlobalEnd);
 
     function removeWireObj(wireObj) {
