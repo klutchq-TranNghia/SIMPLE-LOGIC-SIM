@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mô Phỏng Cổng Logic</title>
+    <title>Mô Phỏng Cổng Logic IEEE - Hoàn Thiện</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -436,7 +436,7 @@
     function getPinY(config, pinIndex) {
         if (config.in === 1) return config.height / 2;
         if (config.in === 7) return config.height * (pinIndex + 1) / 8;
-        // Tăng khoảng cách cho 2 inputs (đẩy ra rìa thêm, cách nhau ~20px)
+        // Khoảng cách 2 input: đẩy ra xa nhau (ví dụ: cách tâm 10px => 2 chân cách nhau 20px)
         return config.height / 2 + (pinIndex === 0 ? -10 : 10);
     }
 
@@ -483,11 +483,8 @@
                 const toPin = connectingFrom.type === 'in' ? connectingFrom : { compId, type, pinIndex, element: pinElement };
                 createWire(fromPin, toPin);
                 
-                if (connectingFrom.type === 'out') {
-                    // Không clearPinSelection() để cắm tiếp cổng đỏ
-                } else {
-                    clearPinSelection();
-                }
+                // Sau khi cắm xong thì ngắt luôn trạng thái chọn (Deselect)
+                clearPinSelection();
             } else {
                 connectingFrom.element.classList.remove('selected');
                 connectingFrom = { compId, type, pinIndex, element: pinElement };
@@ -567,7 +564,6 @@
         group.addEventListener('mouseleave', () => { if(hoveredComponent === comp) hoveredComponent = null; });
         group.innerHTML = config.svg;
 
-        // Bỏ xóa bằng Chuột phải ở đây để chuyển sang dùng phím (người dùng yêu cầu)
         group.addEventListener('contextmenu', (e) => { e.preventDefault(); });
 
         let textEl = null;
@@ -598,22 +594,24 @@
             group.addEventListener('mouseleave', releaseBtn); group.addEventListener('touchcancel', releaseBtn);
         }
 
+        // Tạo các chân INPUT Xanh
         for (let i = 0; i < config.in; i++) {
             const pinY = getPinY(config, i);
             const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
             circle.setAttribute("class", "pin pin-in");
-            circle.setAttribute("cx", 0); circle.setAttribute("cy", pinY); circle.setAttribute("r", 6); // R=6
+            circle.setAttribute("cx", 0); circle.setAttribute("cy", pinY); circle.setAttribute("r", 6); // Đã thu nhỏ
             const handlePin = (e) => { e.stopPropagation(); handlePinClick(e, comp.id, 'in', i, circle); };
             circle.addEventListener('mousedown', handlePin);
             circle.addEventListener('touchstart', (e) => { e.preventDefault(); handlePin(e); }, {passive: false});
             group.appendChild(circle);
         }
 
+        // Tạo chân OUTPUT Đỏ (Căn giữa)
         if (config.out > 0) {
-            const pinY = getPinY(config, 0);
+            const pinY = config.height / 2; // CHÍNH XÁC NẰM Ở GIỮA CHIỀU CAO
             const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
             circle.setAttribute("class", "pin pin-out");
-            circle.setAttribute("cx", config.width); circle.setAttribute("cy", pinY); circle.setAttribute("r", 6); // R=6
+            circle.setAttribute("cx", config.width); circle.setAttribute("cy", pinY); circle.setAttribute("r", 6); // Đã thu nhỏ
             const handlePinOut = (e) => { e.stopPropagation(); handlePinClick(e, comp.id, 'out', null, circle); };
             circle.addEventListener('mousedown', handlePinOut);
             circle.addEventListener('touchstart', (e) => { e.preventDefault(); handlePinOut(e); }, {passive: false});
@@ -677,7 +675,6 @@
         simulate(); saveState("Đổi trạng thái INPUT");
     }
 
-    // --- Chuyển các sự kiện kéo thả ra Window để không bị kẹt khi ra ngoài màn hình ---
     function handleGlobalMove(e) {
         if (draggedElement) {
             if(e.type === 'touchmove') e.preventDefault();
@@ -721,7 +718,6 @@
         if (draggedElement) {
             if(draggedElement.longPressTimer) clearTimeout(draggedElement.longPressTimer);
             
-            // Chỉ bắt buộc xóa khi dùng cảm ứng (Mobile)
             if (e.type === 'touchend') {
                 const dropY = e.changedTouches ? e.changedTouches[0].clientY : 0;
                 if (dropY < document.getElementById('toolbar').offsetHeight + 10) { 
@@ -761,7 +757,6 @@
         wire.path.addEventListener('mousedown', (e) => { e.stopPropagation(); selectObject('wire', wire, wire.path); });
         wire.path.addEventListener('touchstart', (e) => { e.stopPropagation(); selectObject('wire', wire, wire.path); }, {passive: false});
 
-        // Chuột phải xóa nhanh dây (Yêu cầu giữ lại)
         wire.path.addEventListener('contextmenu', (e) => { e.preventDefault(); removeWireObj(wire); });
         
         wire.path.addEventListener('touchend', (e) => {
@@ -778,7 +773,7 @@
         const config = gateConfig[comp.type];
         const cx = config.width / 2; const cy = config.height / 2;
         let px = isOutput ? config.width : 0;
-        let py = isOutput ? getPinY(config, 0) : getPinY(config, pinIndex);
+        let py = isOutput ? config.height / 2 : getPinY(config, pinIndex); // Đảm bảo output tính theo center
         let tx = px - cx, ty = py - cy;
         let rx = tx, ry = ty;
         if (comp.rotation === 90) { rx = -ty; ry = tx; }
