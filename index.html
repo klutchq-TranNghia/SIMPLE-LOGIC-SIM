@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mô Phỏng Cổng Logic IEEE - Bổ sung Mobile</title>
+    <title>Mô Phỏng Cổng Logic IEEE - Pan & Zoom Mobile</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -13,7 +13,8 @@
             flex-direction: column;
             height: 100vh;
             background-color: #f0f0f0;
-            overscroll-behavior: none; /* Ngăn pull-to-refresh trên mobile */
+            overscroll-behavior: none;
+            overflow: hidden;
         }
         
         #toolbar {
@@ -25,7 +26,19 @@
             position: relative;
             z-index: 10;
             gap: 8px;
+            height: 40px; /* Cố định chiều cao cơ sở */
         }
+
+        /* Vùng kéo để xóa */
+        #delete-zone {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(231, 76, 60, 0.95);
+            color: white; font-size: 16px; font-weight: bold;
+            display: flex; align-items: center; justify-content: center;
+            z-index: 20; opacity: 0; pointer-events: none; transition: opacity 0.2s;
+        }
+        #delete-zone.active { opacity: 1; pointer-events: auto; }
 
         .gates-group { display: flex; gap: 8px; margin-left: auto; align-items: center; }
         
@@ -74,7 +87,6 @@
             background-image: radial-gradient(#aaa 1px, transparent 1px); background-size: 20px 20px;
         }
         
-        /* Terminal Styles */
         #terminal {
             display: none; height: 160px; background-color: #1e1e1e; color: #2ecc71;
             font-family: monospace; padding: 10px; overflow-y: auto; border-top: 3px solid #333;
@@ -84,13 +96,18 @@
         .terminal-err { color: #e74c3c; }
 
         .gate { cursor: move; }
-        .gate-text { font-size: 13px; font-weight: bold; pointer-events: none; user-select: none; font-family: monospace; }
+        /* Tắt bôi đen text */
+        .gate text, .gate-text { 
+            font-size: 13px; font-weight: bold; font-family: monospace; 
+            pointer-events: none !important; user-select: none !important; -webkit-user-select: none !important; 
+        }
         
-        .pin { cursor: crosshair; stroke: #333; stroke-width: 1.5; transition: all 0.2s; }
+        /* Pin to hơn */
+        .pin { cursor: crosshair; stroke: #333; stroke-width: 2.5; transition: all 0.2s; }
         .pin-in { fill: #2ecc71; }
         .pin-out { fill: #e74c3c; }
-        .pin:hover { r: 8; stroke-width: 2; }
-        .pin.selected { stroke: #f1c40f; stroke-width: 3; r: 7; filter: drop-shadow(0px 0px 4px rgba(241, 196, 15, 0.8)); }
+        .pin:hover { r: 11; stroke-width: 3; }
+        .pin.selected { stroke: #f1c40f; stroke-width: 4; r: 10; filter: drop-shadow(0px 0px 4px rgba(241, 196, 15, 0.8)); }
         
         .wire { fill: none; stroke: #444; stroke-width: 4.5; pointer-events: stroke; cursor: pointer; transition: stroke-width 0.2s, stroke 0.2s; }
         .wire:hover { stroke-width: 7; stroke: #666; }
@@ -103,28 +120,14 @@
 
         #drag-ghosts { position: absolute; top: -2000px; left: -2000px; }
 
-        /* --- RESPONSIVE MOBILE --- */
         @media (max-width: 768px) {
-            #toolbar { flex-wrap: wrap; padding: 6px; gap: 6px; justify-content: space-between; }
-            .gates-group { 
-                flex-wrap: wrap; 
-                margin-left: 0; 
-                width: 100%; 
-                justify-content: flex-start; 
-                gap: 4px;
-                padding-top: 4px;
-                border-top: 1px solid #34495e;
-            }
-            .guide-text { display: none; } /* Ẩn text hướng dẫn trên đt */
-            .drag-btn { 
-                padding: 8px 10px; 
-                font-size: 12px; 
-                flex-grow: 1; 
-                text-align: center;
-            }
-            .pin { stroke-width: 6; r: 7; } /* Vùng chạm pin to hơn */
-            .wire { stroke-width: 6; } /* Dây to hơn chút để dễ bấm đúp */
-            .separator { display: none; } /* Ẩn dấu | */
+            #toolbar { flex-wrap: wrap; padding: 6px; gap: 6px; height: auto; min-height: 80px; justify-content: space-between; }
+            .gates-group { flex-wrap: wrap; margin-left: 0; width: 100%; justify-content: flex-start; gap: 4px; padding-top: 4px; border-top: 1px solid #34495e; }
+            .guide-text { display: none; }
+            .drag-btn { padding: 8px 10px; font-size: 12px; flex-grow: 1; text-align: center; }
+            .pin { stroke-width: 3; }
+            .wire { stroke-width: 6; }
+            .separator { display: none; }
             .dropdown { flex-grow: 1; }
             .dropbtn { width: 100%; text-align: center; }
         }
@@ -133,6 +136,7 @@
 <body>
 
 <div id="toolbar">
+    <div id="delete-zone">🗑️ Kéo thả linh kiện vào đây để xóa</div>
     <div class="dropdown">
         <button onclick="toggleDropdown('sysDropdown')" class="dropbtn system-btn">⚙️ Menu ▾</button>
         <div id="sysDropdown" class="dropdown-content">
@@ -147,15 +151,13 @@
     <input type="file" id="fileInput" style="display:none" accept=".json" onchange="loadCircuit(event)">
 
     <span class="guide-text">
-        🤚 Kéo thả | ⌨️ R Xoay | 🖱️🖱️ IN | 🖱️ Chuột phải Xóa
+        🤚 Pinch to Zoom | ⌨️ R (Giữ 0.6s) Xoay | 🖱️🖱️ Nháy 2 lần IN | Kéo lên đây Xóa
     </span>
     
     <div class="gates-group">
         <div class="drag-btn btn-in" draggable="true" ondragstart="dragStart(event, 'INPUT')" onclick="addComponent('INPUT')">INPUT</div>
         <div class="drag-btn btn-out" draggable="true" ondragstart="dragStart(event, 'OUTPUT')" onclick="addComponent('OUTPUT')">OUTPUT</div>
-        
         <span class="separator" style="color: #7f8c8d; padding: 0 4px;">|</span>
-        
         <div class="drag-btn" draggable="true" ondragstart="dragStart(event, 'AND')" onclick="addComponent('AND')">AND</div>
         <div class="drag-btn" draggable="true" ondragstart="dragStart(event, 'OR')" onclick="addComponent('OR')">OR</div>
         <div class="drag-btn" draggable="true" ondragstart="dragStart(event, 'XOR')" onclick="addComponent('XOR')">XOR</div>
@@ -182,8 +184,10 @@
 
 <div id="canvas-container" ondragover="allowDrop(event)" ondrop="drop(event)">
     <svg id="canvas">
-        <g id="wires"></g>
-        <g id="components"></g>
+        <g id="workspace">
+            <g id="wires"></g>
+            <g id="components"></g>
+        </g>
     </svg>
 </div>
 
@@ -195,16 +199,11 @@
 <div id="drag-ghosts"></div>
 
 <script>
-    // --- UI Toggles ---
-    function toggleDropdown(id) { 
-        document.getElementById(id).classList.toggle("show"); 
-    }
+    function toggleDropdown(id) { document.getElementById(id).classList.toggle("show"); }
     window.onclick = function(event) {
         if (!event.target.matches('.dropbtn')) {
             var dropdowns = document.getElementsByClassName("dropdown-content");
-            for (var i = 0; i < dropdowns.length; i++) {
-                if (dropdowns[i].classList.contains('show')) dropdowns[i].classList.remove('show');
-            }
+            for (var i = 0; i < dropdowns.length; i++) dropdowns[i].classList.remove('show');
         }
     }
     function toggleTerminal() {
@@ -224,31 +223,49 @@
         container.scrollTop = container.scrollHeight;
     }
 
-    // --- Core Data ---
     const svg = document.getElementById('canvas');
+    const workspace = document.getElementById('workspace');
     const wiresGroup = document.getElementById('wires');
     const componentsGroup = document.getElementById('components');
     const dragGhostsContainer = document.getElementById('drag-ghosts');
+    const deleteZone = document.getElementById('delete-zone');
 
-    let components = [];
-    let wires = [];
-    let draggedElement = null;
-    let dragStartPos = null;
-    let offset = { x: 0, y: 0 };
-    let connectingFrom = null; 
-    let hoveredComponent = null;
+    let components = [], wires = [];
+    let draggedElement = null, dragStartPos = null, offset = { x: 0, y: 0 };
+    let connectingFrom = null, hoveredComponent = null;
 
-    // --- Undo / Redo System ---
-    let undoStack = [];
-    let redoStack = [];
-    let isRestoringState = false;
+    // --- Pan & Zoom ---
+    let currentScale = 1;
+    let currentPan = { x: 0, y: 0 };
+    let isPanning = false, startPan = { x: 0, y: 0 };
+    let initialPinchDist = null, initialScale = 1;
+
+    function updateWorkspace() {
+        workspace.setAttribute('transform', `translate(${currentPan.x}, ${currentPan.y}) scale(${currentScale})`);
+    }
+
+    // Zoom Desktop
+    svg.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const zoomAmount = e.deltaY > 0 ? 0.9 : 1.1;
+        const ctm = workspace.getScreenCTM();
+        const mouseX = (e.clientX - ctm.e) / ctm.a;
+        const mouseY = (e.clientY - ctm.f) / ctm.d;
+
+        currentScale *= zoomAmount;
+        currentPan.x -= mouseX * (zoomAmount - 1) * currentScale;
+        currentPan.y -= mouseY * (zoomAmount - 1) * currentScale;
+        updateWorkspace();
+    });
+
+    // --- Undo / Redo ---
+    let undoStack = [], redoStack = [], isRestoringState = false;
 
     function saveState(actionName = "Thao tác") {
         if (isRestoringState) return;
         const currentState = getCircuitJSON();
         if (undoStack.length === 0 || undoStack[undoStack.length - 1] !== currentState) {
-            undoStack.push(currentState);
-            redoStack = []; 
+            undoStack.push(currentState); redoStack = []; 
             if (undoStack.length > 50) undoStack.shift(); 
             logTerminal(`Đã lưu trạng thái: ${actionName}`);
         }
@@ -259,13 +276,9 @@
             const currentState = undoStack.pop();
             redoStack.push(currentState);
             const prevState = undoStack[undoStack.length - 1];
-            
             isRestoringState = true;
             loadCircuitFromJSON(prevState, false);
-            isRestoringState = false;
-            logTerminal("Hoàn tác (Undo) thành công.", "warn");
-        } else {
-            logTerminal("Không có bước nào để hoàn tác.", "err");
+            isRestoringState = false; logTerminal("Hoàn tác (Undo).", "warn");
         }
     }
 
@@ -273,17 +286,13 @@
         if (redoStack.length > 0) {
             const nextState = redoStack.pop();
             undoStack.push(nextState);
-            
             isRestoringState = true;
             loadCircuitFromJSON(nextState, false);
-            isRestoringState = false;
-            logTerminal("Làm lại (Redo) thành công.", "warn");
-        } else {
-            logTerminal("Không có bước nào để làm lại.", "err");
+            isRestoringState = false; logTerminal("Làm lại (Redo).", "warn");
         }
     }
 
-    // --- Cấu hình cổng ---
+    // --- Gate Config ---
     const gateConfig = {
         'INPUT': { in: 0, out: 1, width: 60, height: 40, svg: `<rect width="60" height="40" rx="5" fill="#e3f2fd" stroke="#333" stroke-width="2"/>` },
         'OUTPUT': { in: 1, out: 0, width: 60, height: 40, svg: `<rect width="60" height="40" rx="5" fill="#fce4ec" stroke="#333" stroke-width="2" class="out-rect"/>` },
@@ -294,13 +303,13 @@
         'LED': { in: 1, out: 0, width: 40, height: 40, svg: `<rect width="40" height="40" rx="20" fill="#222" stroke="#333" stroke-width="2"/><circle cx="20" cy="20" r="14" class="led-bulb led-off"/>` },
         'LED7': { in: 7, out: 0, width: 90, height: 160, svg: `<rect width="90" height="160" rx="8" fill="#222" stroke="#333" stroke-width="2"/><rect class="seg-0 led-off" x="30" y="25" width="36" height="8" rx="4"/><rect class="seg-1 led-off" x="66" y="33" width="8" height="38" rx="4"/><rect class="seg-2 led-off" x="66" y="81" width="8" height="38" rx="4"/><rect class="seg-3 led-off" x="30" y="119" width="36" height="8" rx="4"/><rect class="seg-4 led-off" x="22" y="81" width="8" height="38" rx="4"/><rect class="seg-5 led-off" x="22" y="33" width="8" height="38" rx="4"/><rect class="seg-6 led-off" x="30" y="71" width="36" height="8" rx="4"/><text x="45" y="15" fill="#aaa" font-size="10" text-anchor="middle" font-family="sans-serif">LED 7</text>` },
         
-        'AND': { in: 2, out: 1, width: 70, height: 40, svg: `<path d="M 0,0 L 30,0 A 20,20 0 0,1 50,20 A 20,20 0 0,1 30,40 L 0,40 Z" fill="#fff" stroke="#333" stroke-width="2"/><line x1="50" y1="20" x2="70" y2="20" stroke="#333" stroke-width="2"/><text x="25" y="24" font-size="12" font-weight="bold" font-family="sans-serif" text-anchor="middle" fill="#333">AND</text>` },
-        'OR': { in: 2, out: 1, width: 70, height: 40, svg: `<path d="M 0,0 Q 20,20 0,40 Q 40,40 50,20 Q 40,0 0,0 Z" fill="#fff" stroke="#333" stroke-width="2"/><line x1="50" y1="20" x2="70" y2="20" stroke="#333" stroke-width="2"/><text x="25" y="24" font-size="12" font-weight="bold" font-family="sans-serif" text-anchor="middle" fill="#333">OR</text>` },
-        'XOR': { in: 2, out: 1, width: 90, height: 40, svg: `<path d="M 10,0 Q 30,20 10,40 Q 65,40 70,20 Q 65,0 10,0 Z" fill="#fff" stroke="#333" stroke-width="2"/><path d="M 0,0 Q 20,20 0,40" fill="none" stroke="#333" stroke-width="2"/><line x1="70" y1="20" x2="90" y2="20" stroke="#333" stroke-width="2"/><text x="40" y="24" font-size="13" font-weight="bold" font-family="sans-serif" text-anchor="middle" fill="#333">XOR</text>` },
-        'NOT': { in: 1, out: 1, width: 80, height: 40, svg: `<path d="M 0,5 L 55,20 L 0,35 Z" fill="#fff" stroke="#333" stroke-width="2"/><circle cx="60" cy="20" r="5" fill="#fff" stroke="#333" stroke-width="2"/><line x1="65" y1="20" x2="80" y2="20" stroke="#333" stroke-width="2"/><text x="25" y="24" font-size="12" font-weight="bold" font-family="sans-serif" text-anchor="middle" fill="#333">NOT</text>` },
-        'XNOR': { in: 2, out: 1, width: 95, height: 40, svg: `<path d="M 10,0 Q 30,20 10,40 Q 60,40 65,20 Q 60,0 10,0 Z" fill="#fff" stroke="#333" stroke-width="2"/><path d="M 0,0 Q 20,20 0,40" fill="none" stroke="#333" stroke-width="2"/><circle cx="70" cy="20" r="5" fill="#fff" stroke="#333" stroke-width="2"/><line x1="75" y1="20" x2="95" y2="20" stroke="#333" stroke-width="2"/><text x="40" y="24" font-size="12" font-weight="bold" font-family="sans-serif" text-anchor="middle" fill="#333">XNOR</text>` },
-        'NAND': { in: 2, out: 1, width: 70, height: 40, svg: `<path d="M 0,0 L 30,0 A 20,20 0 0,1 50,20 A 20,20 0 0,1 30,40 L 0,40 Z" fill="#fff" stroke="#333" stroke-width="2"/><circle cx="55" cy="20" r="5" fill="#fff" stroke="#333" stroke-width="2"/><line x1="60" y1="20" x2="70" y2="20" stroke="#333" stroke-width="2"/><text x="25" y="24" font-size="11" font-weight="bold" font-family="sans-serif" text-anchor="middle" fill="#333">NAND</text>` },
-        'NOR': { in: 2, out: 1, width: 70, height: 40, svg: `<path d="M 0,0 Q 20,20 0,40 Q 40,40 50,20 Q 40,0 0,0 Z" fill="#fff" stroke="#333" stroke-width="2"/><circle cx="55" cy="20" r="5" fill="#fff" stroke="#333" stroke-width="2"/><line x1="60" y1="20" x2="70" y2="20" stroke="#333" stroke-width="2"/><text x="25" y="24" font-size="11" font-weight="bold" font-family="sans-serif" text-anchor="middle" fill="#333">NOR</text>` }
+        'AND': { in: 2, out: 1, width: 70, height: 40, svg: `<path d="M 0,0 L 30,0 A 20,20 0 0,1 50,20 A 20,20 0 0,1 30,40 L 0,40 Z" fill="#fff" stroke="#333" stroke-width="2"/><line x1="50" y1="20" x2="70" y2="20" stroke="#333" stroke-width="2"/><text x="25" y="24" text-anchor="middle" fill="#333">AND</text>` },
+        'OR': { in: 2, out: 1, width: 70, height: 40, svg: `<path d="M 0,0 Q 20,20 0,40 Q 40,40 50,20 Q 40,0 0,0 Z" fill="#fff" stroke="#333" stroke-width="2"/><line x1="50" y1="20" x2="70" y2="20" stroke="#333" stroke-width="2"/><text x="25" y="24" text-anchor="middle" fill="#333">OR</text>` },
+        'XOR': { in: 2, out: 1, width: 90, height: 40, svg: `<path d="M 10,0 Q 30,20 10,40 Q 65,40 70,20 Q 65,0 10,0 Z" fill="#fff" stroke="#333" stroke-width="2"/><path d="M 0,0 Q 20,20 0,40" fill="none" stroke="#333" stroke-width="2"/><line x1="70" y1="20" x2="90" y2="20" stroke="#333" stroke-width="2"/><text x="40" y="24" text-anchor="middle" fill="#333">XOR</text>` },
+        'NOT': { in: 1, out: 1, width: 80, height: 40, svg: `<path d="M 0,5 L 55,20 L 0,35 Z" fill="#fff" stroke="#333" stroke-width="2"/><circle cx="60" cy="20" r="5" fill="#fff" stroke="#333" stroke-width="2"/><line x1="65" y1="20" x2="80" y2="20" stroke="#333" stroke-width="2"/><text x="25" y="24" text-anchor="middle" fill="#333">NOT</text>` },
+        'XNOR': { in: 2, out: 1, width: 95, height: 40, svg: `<path d="M 10,0 Q 30,20 10,40 Q 60,40 65,20 Q 60,0 10,0 Z" fill="#fff" stroke="#333" stroke-width="2"/><path d="M 0,0 Q 20,20 0,40" fill="none" stroke="#333" stroke-width="2"/><circle cx="70" cy="20" r="5" fill="#fff" stroke="#333" stroke-width="2"/><line x1="75" y1="20" x2="95" y2="20" stroke="#333" stroke-width="2"/><text x="40" y="24" text-anchor="middle" fill="#333">XNOR</text>` },
+        'NAND': { in: 2, out: 1, width: 70, height: 40, svg: `<path d="M 0,0 L 30,0 A 20,20 0 0,1 50,20 A 20,20 0 0,1 30,40 L 0,40 Z" fill="#fff" stroke="#333" stroke-width="2"/><circle cx="55" cy="20" r="5" fill="#fff" stroke="#333" stroke-width="2"/><line x1="60" y1="20" x2="70" y2="20" stroke="#333" stroke-width="2"/><text x="25" y="24" text-anchor="middle" fill="#333">NAND</text>` },
+        'NOR': { in: 2, out: 1, width: 70, height: 40, svg: `<path d="M 0,0 Q 20,20 0,40 Q 40,40 50,20 Q 40,0 0,0 Z" fill="#fff" stroke="#333" stroke-width="2"/><circle cx="55" cy="20" r="5" fill="#fff" stroke="#333" stroke-width="2"/><line x1="60" y1="20" x2="70" y2="20" stroke="#333" stroke-width="2"/><text x="25" y="24" text-anchor="middle" fill="#333">NOR</text>` }
     };
 
     function initDragGhosts() {
@@ -315,7 +324,6 @@
             const svgString = `<svg xmlns="http://www.w3.org/2000/svg" width="${config.width + 20}" height="${config.height + 20}">
                 <g transform="translate(10, 10)">${config.svg}${textTag}</g>
             </svg>`;
-
             const img = new Image();
             img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgString)));
             img.id = "ghost_" + type;
@@ -335,7 +343,7 @@
         e.preventDefault();
         const type = e.dataTransfer.getData("compType");
         if (type) {
-            const ctm = svg.getScreenCTM();
+            const ctm = workspace.getScreenCTM();
             const config = gateConfig[type];
             const x = (e.clientX - ctm.e) / ctm.a - (config.width / 2);
             const y = (e.clientY - ctm.f) / ctm.d - (config.height / 2);
@@ -343,7 +351,6 @@
         }
     }
 
-    // -- Quản lý Lưu / Tải Dữ Liệu --
     function getCircuitJSON() {
         return JSON.stringify({
             components: components.map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, value: c.value, rotation: c.rotation })),
@@ -355,18 +362,12 @@
     }
 
     function saveCircuit() {
-        if(components.length === 0) { alert("Bản vẽ đang trống, không có gì để lưu!"); return; }
-        const now = new Date();
-        const dateStr = now.getFullYear() + "-" + String(now.getMonth()+1).padStart(2,'0') + "-" + String(now.getDate()).padStart(2,'0') + "_" + String(now.getHours()).padStart(2,'0') + "-" + String(now.getMinutes()).padStart(2,'0') + "-" + String(now.getSeconds()).padStart(2,'0');
-        const filename = `mach_logic_${dateStr}.json`;
-
-        const jsonStr = getCircuitJSON();
-        const blob = new Blob([jsonStr], { type: "application/json" });
+        if(components.length === 0) { alert("Trống!"); return; }
+        const filename = `mach_logic_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+        const blob = new Blob([getCircuitJSON()], { type: "application/json" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url; a.download = filename; a.click();
-        URL.revokeObjectURL(url);
-        logTerminal(`Đã xuất file: ${filename}`);
+        a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
     }
 
     function loadCircuitFromJSON(jsonStr, doLog = true) {
@@ -388,84 +389,52 @@
         if (!file) return;
         const reader = new FileReader();
         reader.onload = function(e) {
-            try {
-                loadCircuitFromJSON(e.target.result);
-                saveState("Tải file JSON");
-            } catch (err) { logTerminal("Lỗi! File không đúng định dạng.", "err"); alert("Lỗi tải file!"); }
+            try { loadCircuitFromJSON(e.target.result); saveState("Tải file"); } catch (err) { alert("Lỗi tải file!"); }
         };
-        reader.readAsText(file);
-        event.target.value = '';
+        reader.readAsText(file); event.target.value = '';
     }
 
     function clearCanvas() {
-        if(confirm("Bạn có chắc chắn muốn xóa toàn bộ mạch không?")) {
+        if(confirm("Xóa toàn bộ mạch?")) {
             componentsGroup.innerHTML = ''; wiresGroup.innerHTML = '';
-            components = []; wires = []; clearSelection();
-            localStorage.removeItem('autosave_circuit');
-            saveState("Xóa toàn bộ");
-            logTerminal("Đã xóa trắng màn hình.");
+            components = []; wires = []; currentScale = 1; currentPan = {x:0, y:0}; updateWorkspace();
+            localStorage.removeItem('autosave_circuit'); saveState("Xóa toàn bộ");
         }
     }
 
-    function autoSave() {
-        if (components.length > 0) {
-            localStorage.setItem('autosave_circuit', getCircuitJSON());
-        } else {
-            localStorage.removeItem('autosave_circuit');
-        }
-    }
-    setInterval(autoSave, 1500);
+    setInterval(() => { if(components.length>0) localStorage.setItem('autosave_circuit', getCircuitJSON()); }, 1500);
 
     window.addEventListener('load', () => {
         const saved = localStorage.getItem('autosave_circuit');
-        if (saved) {
-            try { 
-                loadCircuitFromJSON(saved); 
-                undoStack.push(saved); 
-                logTerminal("Đã phục hồi phiên làm việc tự động lưu.");
-            } catch(e) { console.log(e); }
-        } else {
-            saveState("Bắt đầu");
-        }
+        if (saved) { try { loadCircuitFromJSON(saved); undoStack.push(saved); } catch(e){} } 
+        else saveState("Bắt đầu");
     });
 
-    // --- Key bindings ---
     window.addEventListener('keydown', (e) => {
         if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undo(); }
         if (e.ctrlKey && e.key === 'y') { e.preventDefault(); redo(); }
-
-        if ((e.key === 'r' || e.key === 'R') && hoveredComponent) {
-            rotateComponent(hoveredComponent);
-        }
+        if ((e.key === 'r' || e.key === 'R') && hoveredComponent) rotateComponent(hoveredComponent);
     });
 
     function rotateComponent(comp) {
         comp.rotation = (comp.rotation + 90) % 360;
         const config = gateConfig[comp.type];
         document.getElementById(comp.id).setAttribute(
-            "transform", 
-            `translate(${comp.x}, ${comp.y}) rotate(${comp.rotation}, ${config.width/2}, ${config.height/2})`
+            "transform", `translate(${comp.x}, ${comp.y}) rotate(${comp.rotation}, ${config.width/2}, ${config.height/2})`
         );
-        updateWires();
-        saveState("Xoay linh kiện");
+        updateWires(); saveState("Xoay linh kiện");
     }
 
-    // -- Logic dây & cổng --
     function handlePinClick(e, compId, type, pinIndex, pinElement) {
         if (connectingFrom && connectingFrom.element === pinElement) { clearSelection(); return; }
-
         if (!connectingFrom) {
             connectingFrom = { compId, type, pinIndex, element: pinElement };
             pinElement.classList.add('selected');
         } else {
-            const isDifferentComp = connectingFrom.compId !== compId;
-            const isDifferentType = connectingFrom.type !== type;
-
-            if (isDifferentComp && isDifferentType) {
+            if (connectingFrom.compId !== compId && connectingFrom.type !== type) {
                 const fromPin = connectingFrom.type === 'out' ? connectingFrom : { compId, type, pinIndex, element: pinElement };
                 const toPin = connectingFrom.type === 'in' ? connectingFrom : { compId, type, pinIndex, element: pinElement };
-                createWire(fromPin, toPin);
-                clearSelection();
+                createWire(fromPin, toPin); clearSelection();
             } else {
                 connectingFrom.element.classList.remove('selected');
                 connectingFrom = { compId, type, pinIndex, element: pinElement };
@@ -477,27 +446,35 @@
     function clearSelection() {
         if (connectingFrom) { connectingFrom.element.classList.remove('selected'); connectingFrom = null; }
     }
-    svg.addEventListener('mousedown', clearSelection);
-    svg.addEventListener('touchstart', (e) => { 
-        if(e.target.id === 'canvas' || e.target.tagName === 'svg') clearSelection();
+    
+    // Xử lý Pan / Zoom chạm Touch
+    svg.addEventListener('mousedown', (e) => { 
+        if(e.target === svg) { clearSelection(); isPanning = true; startPan = { x: e.clientX - currentPan.x, y: e.clientY - currentPan.y }; }
     });
+    
+    svg.addEventListener('touchstart', (e) => { 
+        if(e.target === svg || e.target.id === 'canvas' || e.target.id === 'workspace') clearSelection();
+        if(e.touches.length === 2) {
+            initialPinchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+            initialScale = currentScale;
+            isPanning = false;
+        } else if(e.touches.length === 1 && (e.target === svg || e.target.id === 'workspace')) {
+            isPanning = true;
+            startPan = { x: e.touches[0].clientX - currentPan.x, y: e.touches[0].clientY - currentPan.y };
+        }
+    }, {passive: false});
 
     function addComponent(type, x = null, y = null) {
         const id = 'comp_' + Date.now();
         const config = gateConfig[type];
-        // Điều chỉnh spawn để không bị đè dưới toolbar mobile
-        if (x === null) x = 50 + Math.random() * 50;
-        if (y === null) y = 100 + Math.random() * 50;
-
-        const initialValue = (type === 'VDD'); 
-        const comp = { id, type, x, y, inputs: Array(config.in).fill(null), value: initialValue, rotation: 0 };
-        components.push(comp);
-        renderComponent(comp, config);
-        simulate();
-        saveState(`Thêm ${type}`);
+        if (x === null) x = 50 + Math.random() * 50 - currentPan.x/currentScale;
+        if (y === null) y = 100 + Math.random() * 50 - currentPan.y/currentScale;
+        const comp = { id, type, x, y, inputs: Array(config.in).fill(null), value: (type === 'VDD'), rotation: 0 };
+        components.push(comp); renderComponent(comp, config); simulate(); saveState(`Thêm ${type}`);
     }
 
     function deleteComponentObj(comp, group) {
+        if(!comp || !group) return;
         wires = wires.filter(w => {
             if (w.from.compId === comp.id || w.to.compId === comp.id) {
                 w.path.remove();
@@ -512,8 +489,7 @@
         group.remove(); components = components.filter(c => c.id !== comp.id);
         if (connectingFrom && connectingFrom.compId === comp.id) clearSelection();
         if (hoveredComponent === comp) hoveredComponent = null;
-        simulate();
-        saveState(`Xóa cổng ${comp.type}`);
+        simulate(); saveState(`Xóa cổng ${comp.type}`);
     }
 
     function renderComponent(comp, config) {
@@ -524,23 +500,20 @@
 
         group.addEventListener('mouseenter', () => hoveredComponent = comp);
         group.addEventListener('mouseleave', () => { if(hoveredComponent === comp) hoveredComponent = null; });
-
         group.innerHTML = config.svg;
 
         let textEl = null;
         if (comp.type === 'INPUT' || comp.type === 'OUTPUT' || comp.type === 'CLOCK') {
             textEl = document.createElementNS("http://www.w3.org/2000/svg", "text");
             textEl.setAttribute("class", "gate-text");
-            textEl.setAttribute("x", config.width / 2);
-            textEl.setAttribute("y", config.height / 2 + 4);
+            textEl.setAttribute("x", config.width / 2); textEl.setAttribute("y", config.height / 2 + 4);
             textEl.setAttribute("text-anchor", "middle");
-            
             if (comp.type === 'INPUT') textEl.textContent = 'IN: ' + (comp.value ? '1' : '0');
             else if (comp.type === 'CLOCK') textEl.textContent = 'CLK: ' + (comp.value ? '1' : '0');
             else textEl.textContent = 'OUTPUT';
-            
             group.appendChild(textEl);
-
+            
+            // Nháy đúp (Double click Desktop)
             if (comp.type === 'INPUT') {
                 group.addEventListener('dblclick', (e) => {
                     if (e.target.classList.contains('pin')) return; 
@@ -551,95 +524,68 @@
 
         if (comp.type === 'BUTTON') {
             const btnPush = group.querySelector('.btn-push');
-            function pressBtn(e) {
-                if (e.target.classList.contains('pin')) return; 
-                if (e.target.classList.contains('btn-push')) {
-                    comp.value = true; btnPush.setAttribute('fill', '#c0392b'); simulate();
-                }
-            }
-            function releaseBtn() {
-                if(comp.value) { comp.value = false; btnPush.setAttribute('fill', '#e74c3c'); simulate(); }
-            }
-            group.addEventListener('mousedown', pressBtn);
-            group.addEventListener('touchstart', pressBtn, {passive: true});
-            group.addEventListener('mouseup', releaseBtn);
-            group.addEventListener('touchend', releaseBtn);
-            group.addEventListener('mouseleave', releaseBtn);
-            group.addEventListener('touchcancel', releaseBtn);
+            const pressBtn = (e) => { if (e.target.classList.contains('pin')) return; if (e.target.classList.contains('btn-push')) { comp.value = true; btnPush.setAttribute('fill', '#c0392b'); simulate(); } }
+            const releaseBtn = () => { if(comp.value) { comp.value = false; btnPush.setAttribute('fill', '#e74c3c'); simulate(); } }
+            group.addEventListener('mousedown', pressBtn); group.addEventListener('touchstart', pressBtn, {passive: true});
+            group.addEventListener('mouseup', releaseBtn); group.addEventListener('touchend', releaseBtn);
+            group.addEventListener('mouseleave', releaseBtn); group.addEventListener('touchcancel', releaseBtn);
         }
 
         for (let i = 0; i < config.in; i++) {
             const pinY = config.height * (i + 1) / (config.in + 1);
             const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
             circle.setAttribute("class", "pin pin-in");
-            circle.setAttribute("cx", 0); circle.setAttribute("cy", pinY); circle.setAttribute("r", 5);
-            
-            if (comp.type === 'LED7') {
-                const labels = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
-                const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                t.setAttribute("x", 12); t.setAttribute("y", pinY + 3);
-                t.setAttribute("font-size", "10"); t.setAttribute("fill", "#ccc");
-                t.textContent = labels[i]; group.appendChild(t);
-            }
-            
+            circle.setAttribute("cx", 0); circle.setAttribute("cy", pinY); circle.setAttribute("r", 9); // Size to
             const handlePin = (e) => { e.stopPropagation(); handlePinClick(e, comp.id, 'in', i, circle); };
             circle.addEventListener('mousedown', handlePin);
-            circle.addEventListener('touchstart', (e) => { e.preventDefault(); handlePin(); }, {passive: false});
+            circle.addEventListener('touchstart', (e) => { e.preventDefault(); handlePin(e); }, {passive: false});
             group.appendChild(circle);
         }
 
         if (config.out > 0) {
             const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
             circle.setAttribute("class", "pin pin-out");
-            circle.setAttribute("cx", config.width); circle.setAttribute("cy", config.height / 2); circle.setAttribute("r", 5);
-            
+            circle.setAttribute("cx", config.width); circle.setAttribute("cy", config.height / 2); circle.setAttribute("r", 9); // Size to
             const handlePinOut = (e) => { e.stopPropagation(); handlePinClick(e, comp.id, 'out', null, circle); };
             circle.addEventListener('mousedown', handlePinOut);
-            circle.addEventListener('touchstart', (e) => { e.preventDefault(); handlePinOut(); }, {passive: false});
+            circle.addEventListener('touchstart', (e) => { e.preventDefault(); handlePinOut(e); }, {passive: false});
             group.appendChild(circle);
         }
 
-        // Xóa bằng chuột phải (Desktop)
-        group.addEventListener('contextmenu', (e) => {
-            e.preventDefault(); 
-            deleteComponentObj(comp, group);
-        });
+        group.addEventListener('contextmenu', (e) => { e.preventDefault(); deleteComponentObj(comp, group); });
 
-        // Bắt đầu kéo thả (Desktop + Mobile)
         function initDrag(e) {
             if (e.target.classList.contains('pin') || e.target.classList.contains('btn-push')) return;
             draggedElement = comp;
             dragStartPos = { x: comp.x, y: comp.y };
-            const ctm = svg.getScreenCTM();
+            const ctm = workspace.getScreenCTM();
             const clientX = e.clientX !== undefined ? e.clientX : e.touches[0].clientX;
             const clientY = e.clientY !== undefined ? e.clientY : e.touches[0].clientY;
             offset.x = (clientX - ctm.e) / ctm.a - comp.x;
             offset.y = (clientY - ctm.f) / ctm.d - comp.y;
+            deleteZone.classList.add('active'); // Mở vùng xóa
         }
 
         group.addEventListener('mousedown', initDrag);
         group.addEventListener('touchstart', (e) => {
             initDrag(e);
-            // Long press để xóa trên Mobile
-            comp.longPressTimer = setTimeout(() => { deleteComponentObj(comp, group); }, 800);
+            // Rotate với Long Press (0.6s)
+            comp.longPressTimer = setTimeout(() => { 
+                rotateComponent(comp); 
+                draggedElement = null; // Huỷ di chuyển nếu họ đã xoay
+                deleteZone.classList.remove('active');
+            }, 600);
         }, {passive: false});
 
-        group.addEventListener('touchmove', () => {
-            clearTimeout(comp.longPressTimer); // Nếu di chuyển thì ko xóa
-        });
+        group.addEventListener('touchmove', () => clearTimeout(comp.longPressTimer) );
 
-        // Xử lý Double Tap (Rotate hoặc Đổi Input)
+        // Double Tap Mobile (Đổi input)
         group.addEventListener('touchend', (e) => {
             clearTimeout(comp.longPressTimer);
             let currentTime = new Date().getTime();
             let tapLength = currentTime - (comp.lastTap || 0);
-            if (tapLength < 400 && tapLength > 0) {
-                if (comp.type === 'INPUT') {
-                    toggleInputState(comp, textEl);
-                } else {
-                    rotateComponent(comp);
-                }
-                e.preventDefault();
+            if (tapLength < 400 && tapLength > 0 && comp.type === 'INPUT') {
+                toggleInputState(comp, textEl); e.preventDefault();
             }
             comp.lastTap = currentTime;
         });
@@ -650,146 +596,114 @@
     function toggleInputState(comp, textEl) {
         comp.value = !comp.value;
         if(textEl) textEl.textContent = 'IN: ' + (comp.value ? '1' : '0');
-        simulate();
-        saveState("Đổi trạng thái INPUT");
+        simulate(); saveState("Đổi trạng thái INPUT");
     }
 
     function handleGlobalMove(e) {
         if (draggedElement) {
             if(e.type === 'touchmove') e.preventDefault();
-            const ctm = svg.getScreenCTM();
+            const ctm = workspace.getScreenCTM();
             const clientX = e.clientX !== undefined ? e.clientX : e.touches[0].clientX;
             const clientY = e.clientY !== undefined ? e.clientY : e.touches[0].clientY;
             draggedElement.x = (clientX - ctm.e) / ctm.a - offset.x;
             draggedElement.y = (clientY - ctm.f) / ctm.d - offset.y;
             const config = gateConfig[draggedElement.type];
             document.getElementById(draggedElement.id).setAttribute(
-                "transform", 
-                `translate(${draggedElement.x}, ${draggedElement.y}) rotate(${draggedElement.rotation}, ${config.width/2}, ${config.height/2})`
+                "transform", `translate(${draggedElement.x}, ${draggedElement.y}) rotate(${draggedElement.rotation}, ${config.width/2}, ${config.height/2})`
             );
             updateWires();
+        } else if (isPanning && e.type === 'mousemove') {
+            currentPan.x = e.clientX - startPan.x; currentPan.y = e.clientY - startPan.y; updateWorkspace();
+        } else if (isPanning && e.type === 'touchmove' && e.touches.length === 1) {
+            e.preventDefault();
+            currentPan.x = e.touches[0].clientX - startPan.x; currentPan.y = e.touches[0].clientY - startPan.y; updateWorkspace();
+        } else if (e.type === 'touchmove' && e.touches.length === 2 && initialPinchDist) {
+            e.preventDefault();
+            const currentDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+            const zoomAmount = currentDist / initialPinchDist;
+            const newScale = initialScale * zoomAmount;
+            
+            // Focus zoom ra giữa 2 ngón tay
+            const pinchCenterX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+            const pinchCenterY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+            currentPan.x -= (pinchCenterX - currentPan.x) * (newScale / currentScale - 1);
+            currentPan.y -= (pinchCenterY - currentPan.y) * (newScale / currentScale - 1);
+            
+            currentScale = newScale; initialPinchDist = currentDist; initialScale = currentScale;
+            updateWorkspace();
         }
     }
 
-    function handleGlobalEnd() { 
-        if (draggedElement && dragStartPos) {
-            if (Math.abs(draggedElement.x - dragStartPos.x) > 1 || Math.abs(draggedElement.y - dragStartPos.y) > 1) {
+    function handleGlobalEnd(e) { 
+        if (draggedElement) {
+            const dropY = e.clientY !== undefined ? e.clientY : (e.changedTouches ? e.changedTouches[0].clientY : 0);
+            if (dropY < document.getElementById('toolbar').offsetHeight + 10) { // Thả vào khu vực toolbar đỏ -> xóa
+                deleteComponentObj(draggedElement, document.getElementById(draggedElement.id));
+            } else if (dragStartPos && (Math.abs(draggedElement.x - dragStartPos.x) > 1 || Math.abs(draggedElement.y - dragStartPos.y) > 1)) {
                 saveState("Di chuyển");
             }
         }
-        draggedElement = null; 
-        dragStartPos = null;
+        deleteZone.classList.remove('active');
+        draggedElement = null; dragStartPos = null;
+        if(e.type === 'mouseup' || (e.type === 'touchend' && e.touches.length === 0)) isPanning = false;
+        if(e.type === 'touchend' && e.touches.length < 2) initialPinchDist = null;
     }
 
-    svg.addEventListener('mousemove', handleGlobalMove);
-    svg.addEventListener('touchmove', handleGlobalMove, {passive: false});
-    svg.addEventListener('mouseup', handleGlobalEnd);
-    svg.addEventListener('touchend', handleGlobalEnd);
-    svg.addEventListener('mouseleave', () => { draggedElement = null; clearSelection(); });
+    svg.addEventListener('mousemove', handleGlobalMove); svg.addEventListener('touchmove', handleGlobalMove, {passive: false});
+    svg.addEventListener('mouseup', handleGlobalEnd); svg.addEventListener('touchend', handleGlobalEnd);
+    svg.addEventListener('mouseleave', () => { draggedElement = null; clearSelection(); isPanning = false; deleteZone.classList.remove('active'); });
     svg.addEventListener('touchcancel', handleGlobalEnd);
 
     function removeWireObj(wireObj) {
         const targetComp = components.find(c => c.id === wireObj.to.compId);
         if (targetComp) targetComp.inputs[wireObj.to.pinIndex] = null;
-        wireObj.path.remove();
-        wires = wires.filter(w => w !== wireObj); 
-        simulate();
-        saveState("Xóa dây nối");
+        wireObj.path.remove(); wires = wires.filter(w => w !== wireObj); simulate(); saveState("Xóa dây");
     }
 
     function createWire(from, to, doSave = true) {
-        wires = wires.filter(w => {
-            if (w.to.compId === to.compId && w.to.pinIndex === to.pinIndex) { 
-                w.path.remove(); return false; 
-            }
-            return true;
-        });
-        
+        wires = wires.filter(w => { if (w.to.compId === to.compId && w.to.pinIndex === to.pinIndex) { w.path.remove(); return false; } return true; });
         const wire = { from, to, path: document.createElementNS("http://www.w3.org/2000/svg", "path"), state: false };
         wire.path.setAttribute("class", "wire");
-        
-        // Chuột phải để xóa dây (Desktop)
         wire.path.addEventListener('contextmenu', (e) => { e.preventDefault(); removeWireObj(wire); });
-        // Double-tap để xóa dây (Mobile)
         wire.path.addEventListener('touchend', (e) => {
-            let currentTime = new Date().getTime();
-            let tapLength = currentTime - (wire.lastTap || 0);
-            if (tapLength < 400 && tapLength > 0) {
-                removeWireObj(wire);
-                e.preventDefault();
-            }
-            wire.lastTap = currentTime;
+            let t = new Date().getTime(); if (t - (wire.lastTap || 0) < 400 && t - (wire.lastTap || 0) > 0) { removeWireObj(wire); e.preventDefault(); } wire.lastTap = t;
         });
-
-        wiresGroup.appendChild(wire.path); 
-        wires.push(wire);
-        
-        const targetComp = components.find(c => c.id === to.compId);
-        targetComp.inputs[to.pinIndex] = wire;
-        
-        updateWires(); simulate();
-        if(doSave) { saveState("Nối dây"); logTerminal(`Nối dây từ cổng out sang in[${to.pinIndex}]`); }
+        wiresGroup.appendChild(wire.path); wires.push(wire);
+        components.find(c => c.id === to.compId).inputs[to.pinIndex] = wire;
+        updateWires(); simulate(); if(doSave) saveState("Nối dây");
     }
 
     function getPinAbsolutePosition(comp, isOutput, pinIndex) {
         const config = gateConfig[comp.type];
         const cx = config.width / 2; const cy = config.height / 2;
-        let px, py;
-
-        if (isOutput) { px = config.width; py = config.height / 2; } 
-        else { px = 0; py = config.height * (pinIndex + 1) / (config.in + 1); }
-
+        let px = isOutput ? config.width : 0;
+        let py = isOutput ? config.height / 2 : config.height * (pinIndex + 1) / (config.in + 1);
         let tx = px - cx, ty = py - cy;
-        let rx, ry;
-
-        if (comp.rotation === 0) { rx = tx; ry = ty; }
-        else if (comp.rotation === 90) { rx = -ty; ry = tx; }
+        let rx = tx, ry = ty;
+        if (comp.rotation === 90) { rx = -ty; ry = tx; }
         else if (comp.rotation === 180) { rx = -tx; ry = -ty; }
         else if (comp.rotation === 270) { rx = ty; ry = -tx; }
-
         return { x: comp.x + cx + rx, y: comp.y + cy + ry };
     }
 
     function updateWires() {
         wires.forEach(wire => {
-            const sourceComp = components.find(c => c.id === wire.from.compId);
-            const targetComp = components.find(c => c.id === wire.to.compId);
-            
-            const startPos = getPinAbsolutePosition(sourceComp, true, 0);
-            const endPos = getPinAbsolutePosition(targetComp, false, wire.to.pinIndex);
-
-            const offset = 40;
-            let cp1x = startPos.x, cp1y = startPos.y;
-            let cp2x = endPos.x, cp2y = endPos.y;
-
-            if (sourceComp.rotation === 0) cp1x += offset;
-            else if (sourceComp.rotation === 90) cp1y += offset;
-            else if (sourceComp.rotation === 180) cp1x -= offset;
-            else if (sourceComp.rotation === 270) cp1y -= offset;
-
-            if (targetComp.rotation === 0) cp2x -= offset;
-            else if (targetComp.rotation === 90) cp2y -= offset;
-            else if (targetComp.rotation === 180) cp2x += offset;
-            else if (targetComp.rotation === 270) cp2y += offset;
-
-            const d = `M ${startPos.x} ${startPos.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endPos.x} ${endPos.y}`;
-            wire.path.setAttribute("d", d);
-
-            if (wire.state) wire.path.classList.add('active');
-            else wire.path.classList.remove('active');
+            const sc = components.find(c => c.id === wire.from.compId), tc = components.find(c => c.id === wire.to.compId);
+            const startPos = getPinAbsolutePosition(sc, true, 0), endPos = getPinAbsolutePosition(tc, false, wire.to.pinIndex);
+            const offset = 40; let cp1x = startPos.x, cp1y = startPos.y, cp2x = endPos.x, cp2y = endPos.y;
+            if (sc.rotation === 0) cp1x += offset; else if (sc.rotation === 90) cp1y += offset; else if (sc.rotation === 180) cp1x -= offset; else if (sc.rotation === 270) cp1y -= offset;
+            if (tc.rotation === 0) cp2x -= offset; else if (tc.rotation === 90) cp2y -= offset; else if (tc.rotation === 180) cp2x += offset; else if (tc.rotation === 270) cp2y += offset;
+            wire.path.setAttribute("d", `M ${startPos.x} ${startPos.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endPos.x} ${endPos.y}`);
+            wire.state ? wire.path.classList.add('active') : wire.path.classList.remove('active');
         });
     }
 
     function simulate() {
-        let changed = true;
-        let iterations = 0;
-        
+        let changed = true, iterations = 0;
         while(changed && iterations < 100) {
             changed = false;
             components.forEach(comp => {
-                let oldVal = comp.value;
-                let inVals = comp.inputs.map(w => w ? w.state : false);
-
+                let oldVal = comp.value; let inVals = comp.inputs.map(w => w ? w.state : false);
                 switch(comp.type) {
                     case 'VDD': comp.value = true; break;
                     case 'GND': comp.value = false; break;
@@ -800,68 +714,29 @@
                     case 'NOR':  comp.value = !(inVals[0] || inVals[1]); break;
                     case 'XNOR': comp.value = (inVals[0] === inVals[1]); break;
                     case 'NOT': comp.value = !inVals[0]; break;
-                    case 'BUTTON': 
-                    case 'CLOCK': break; 
                     case 'OUTPUT':
                         comp.value = inVals[0];
-                        const textEl = document.getElementById(comp.id).querySelector('.gate-text');
-                        if(textEl) textEl.textContent = 'OUT: ' + (comp.value ? '1' : '0');
-                        const outRect = document.getElementById(comp.id).querySelector('.out-rect');
-                        if (outRect) {
-                            outRect.style.fill = comp.value ? '#f8bbd0' : '#fce4ec';
-                            outRect.style.stroke = comp.value ? '#c2185b' : '#333';
-                        }
+                        const textEl = document.getElementById(comp.id).querySelector('.gate-text'); if(textEl) textEl.textContent = 'OUT: ' + (comp.value ? '1' : '0');
+                        const outRect = document.getElementById(comp.id).querySelector('.out-rect'); if (outRect) { outRect.style.fill = comp.value ? '#f8bbd0' : '#fce4ec'; outRect.style.stroke = comp.value ? '#c2185b' : '#333'; }
                         break;
                     case 'LED':
-                        comp.value = inVals[0];
-                        const bulb = document.getElementById(comp.id).querySelector('.led-bulb');
-                        if (bulb) {
-                            if (comp.value) { bulb.classList.remove('led-off'); bulb.classList.add('led-on'); } 
-                            else { bulb.classList.remove('led-on'); bulb.classList.add('led-off'); }
-                        }
-                        break;
+                        comp.value = inVals[0]; const bulb = document.getElementById(comp.id).querySelector('.led-bulb');
+                        if (bulb) { if (comp.value) { bulb.classList.remove('led-off'); bulb.classList.add('led-on'); } else { bulb.classList.remove('led-on'); bulb.classList.add('led-off'); } } break;
                     case 'LED7':
-                        comp.value = false;
-                        const groupEl = document.getElementById(comp.id);
-                        if(groupEl) {
-                            for(let i = 0; i < 7; i++) {
-                                const seg = groupEl.querySelector('.seg-' + i);
-                                if(seg) {
-                                    if(inVals[i]) { seg.classList.remove('led-off'); seg.classList.add('led-on'); } 
-                                    else { seg.classList.remove('led-on'); seg.classList.add('led-off'); }
-                                }
-                            }
-                        }
-                        break;
+                        comp.value = false; const groupEl = document.getElementById(comp.id);
+                        if(groupEl) { for(let i = 0; i < 7; i++) { const seg = groupEl.querySelector('.seg-' + i); if(seg) { if(inVals[i]) { seg.classList.remove('led-off'); seg.classList.add('led-on'); } else { seg.classList.remove('led-on'); seg.classList.add('led-off'); } } } } break;
                 }
-
                 if (oldVal !== comp.value) changed = true;
-                
-                wires.forEach(w => {
-                    if(w.from.compId === comp.id && w.state !== comp.value) {
-                        w.state = comp.value;
-                        changed = true;
-                    }
-                });
-            });
-            iterations++;
-        }
-        updateWires();
+                wires.forEach(w => { if(w.from.compId === comp.id && w.state !== comp.value) { w.state = comp.value; changed = true; } });
+            }); iterations++;
+        } updateWires();
     }
 
     setInterval(() => {
         let hasClock = false;
-        components.forEach(comp => {
-            if (comp.type === 'CLOCK') {
-                comp.value = !comp.value;
-                hasClock = true;
-                const textEl = document.getElementById(comp.id).querySelector('.gate-text');
-                if (textEl) textEl.textContent = 'CLK: ' + (comp.value ? '1' : '0');
-            }
-        });
+        components.forEach(comp => { if (comp.type === 'CLOCK') { comp.value = !comp.value; hasClock = true; const textEl = document.getElementById(comp.id).querySelector('.gate-text'); if (textEl) textEl.textContent = 'CLK: ' + (comp.value ? '1' : '0'); } });
         if (hasClock) simulate();
     }, 1000);
-
 </script>
 
 </body>
