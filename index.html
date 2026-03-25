@@ -422,8 +422,10 @@
         updateWires(); saveState("Xoay linh kiện");
     }
 
+    // --- CẢI TIẾN LOGIC CHỌN DÂY NỐI (CHO PHÉP CỔNG ĐỎ NỐI NHIỀU CỔNG XANH DỄ DÀNG) ---
     function handlePinClick(e, compId, type, pinIndex, pinElement) {
         if (connectingFrom && connectingFrom.element === pinElement) { clearSelection(); return; }
+        
         if (!connectingFrom) {
             connectingFrom = { compId, type, pinIndex, element: pinElement };
             pinElement.classList.add('selected');
@@ -431,7 +433,16 @@
             if (connectingFrom.compId !== compId && connectingFrom.type !== type) {
                 const fromPin = connectingFrom.type === 'out' ? connectingFrom : { compId, type, pinIndex, element: pinElement };
                 const toPin = connectingFrom.type === 'in' ? connectingFrom : { compId, type, pinIndex, element: pinElement };
-                createWire(fromPin, toPin); clearSelection();
+                createWire(fromPin, toPin);
+                
+                // Điểm khác biệt nằm ở đây:
+                // Nếu đang cầm cổng đỏ (out), ta giữ nguyên trạng thái selected để tiện bấm sang cổng xanh khác
+                // Nếu đang cầm cổng xanh (in), do 1 in chỉ nhận 1 out, nên nối xong ta sẽ hủy chọn luôn
+                if (connectingFrom.type === 'out') {
+                    // Không clearSelection(), giữ cổng đỏ sáng lên
+                } else {
+                    clearSelection();
+                }
             } else {
                 connectingFrom.element.classList.remove('selected');
                 connectingFrom = { compId, type, pinIndex, element: pinElement };
@@ -560,7 +571,6 @@
             const clientX = e.clientX !== undefined ? e.clientX : e.touches[0].clientX;
             const clientY = e.clientY !== undefined ? e.clientY : e.touches[0].clientY;
             
-            // Lưu lại vị trí chạm đầu tiên để so sánh có bị trượt tay không
             comp.dragStartClientX = clientX;
             comp.dragStartClientY = clientY;
             
