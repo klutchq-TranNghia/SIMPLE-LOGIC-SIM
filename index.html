@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mô Phỏng Cổng Logic Cơ Bản</title>
+    <title>Mô Phỏng Cổng Logic</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -148,7 +148,7 @@
     <input type="file" id="fileInput" style="display:none" accept=".json" onchange="loadCircuit(event)">
 
     <span class="guide-text">
-        🤚 Pinch to Zoom | 🖱️/👆 Giữ 0.6s Xoay | 🖱️🖱️ Nháy 2 lần IN | Kéo lên Toolbar Xóa
+        💻 Chuột Phải: Xóa | Phím R: Xoay | Nháy đúp: Input || 📱 Kéo thả đỏ: Xóa | Giữ 0.6s: Xoay
     </span>
     
     <div class="gates-group">
@@ -241,7 +241,6 @@
         workspace.setAttribute('transform', `translate(${currentPan.x}, ${currentPan.y}) scale(${currentScale})`);
     }
 
-    // Zoom Desktop
     svg.addEventListener('wheel', (e) => {
         e.preventDefault();
         const zoomAmount = e.deltaY > 0 ? 0.9 : 1.1;
@@ -373,7 +372,8 @@
         components = []; wires = []; clearSelection();
         data.components.forEach(c => {
             const config = gateConfig[c.type];
-            const comp = { id: c.id, type: c.type, x: c.x, y: c.y, inputs: Array(config.in).fill(null), value: c.value, rotation: c.rotation || 0 };
+            // Khởi tạo mảng chứa nhiều dây cho mỗi chân input
+            const comp = { id: c.id, type: c.type, x: c.x, y: c.y, inputs: Array.from({length: config.in}, () => []), value: c.value, rotation: c.rotation || 0 };
             components.push(comp); renderComponent(comp, config);
         });
         data.wires.forEach(w => { createWire(w.from, w.to, false); });
@@ -407,6 +407,7 @@
         else saveState("Bắt đầu");
     });
 
+    // Phím R để xoay (Desktop)
     window.addEventListener('keydown', (e) => {
         if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undo(); }
         if (e.ctrlKey && e.key === 'y') { e.preventDefault(); redo(); }
@@ -422,7 +423,6 @@
         updateWires(); saveState("Xoay linh kiện");
     }
 
-    // --- CẢI TIẾN LOGIC CHỌN DÂY NỐI (CHO PHÉP CỔNG ĐỎ NỐI NHIỀU CỔNG XANH DỄ DÀNG) ---
     function handlePinClick(e, compId, type, pinIndex, pinElement) {
         if (connectingFrom && connectingFrom.element === pinElement) { clearSelection(); return; }
         
@@ -435,11 +435,9 @@
                 const toPin = connectingFrom.type === 'in' ? connectingFrom : { compId, type, pinIndex, element: pinElement };
                 createWire(fromPin, toPin);
                 
-                // Điểm khác biệt nằm ở đây:
-                // Nếu đang cầm cổng đỏ (out), ta giữ nguyên trạng thái selected để tiện bấm sang cổng xanh khác
-                // Nếu đang cầm cổng xanh (in), do 1 in chỉ nhận 1 out, nên nối xong ta sẽ hủy chọn luôn
+                // Giữ lại lựa chọn nếu đang cắm từ nguồn ra (để chia nhánh 1 OUT -> nhiều IN dễ dàng)
                 if (connectingFrom.type === 'out') {
-                    // Không clearSelection(), giữ cổng đỏ sáng lên
+                    // Không clearSelection()
                 } else {
                     clearSelection();
                 }
@@ -455,8 +453,9 @@
         if (connectingFrom) { connectingFrom.element.classList.remove('selected'); connectingFrom = null; }
     }
     
-    // Xử lý Pan / Zoom chạm Touch
+    // Pan / Zoom
     svg.addEventListener('mousedown', (e) => { 
+        if(e.button === 2) return; // Không pan bằng chuột phải
         if(e.target === svg) { clearSelection(); isPanning = true; startPan = { x: e.clientX - currentPan.x, y: e.clientY - currentPan.y }; }
     });
     
@@ -477,7 +476,7 @@
         const config = gateConfig[type];
         if (x === null) x = 50 + Math.random() * 50 - currentPan.x/currentScale;
         if (y === null) y = 100 + Math.random() * 50 - currentPan.y/currentScale;
-        const comp = { id, type, x, y, inputs: Array(config.in).fill(null), value: (type === 'VDD'), rotation: 0 };
+        const comp = { id, type, x, y, inputs: Array.from({length: config.in}, () => []), value: (type === 'VDD'), rotation: 0 };
         components.push(comp); renderComponent(comp, config); simulate(); saveState(`Thêm ${type}`);
     }
 
@@ -488,7 +487,9 @@
                 w.path.remove();
                 if (w.to.compId !== comp.id) {
                     const target = components.find(c => c.id === w.to.compId);
-                    if (target) target.inputs[w.to.pinIndex] = null;
+                    if (target) {
+                        target.inputs[w.to.pinIndex] = target.inputs[w.to.pinIndex].filter(wire => wire !== w);
+                    }
                 }
                 return false;
             }
@@ -510,8 +511,11 @@
         group.addEventListener('mouseleave', () => { if(hoveredComponent === comp) hoveredComponent = null; });
         group.innerHTML = config.svg;
 
-        // Vô hiệu hóa chuột phải (contextmenu) để không bị xóa khi giữ lâu trên Mobile
-        group.addEventListener('contextmenu', (e) => { e.preventDefault(); });
+        // Chuột phải (Desktop) -> Xóa linh kiện
+        group.addEventListener('contextmenu', (e) => { 
+            e.preventDefault(); 
+            deleteComponentObj(comp, group); 
+        });
 
         let textEl = null;
         if (comp.type === 'INPUT' || comp.type === 'OUTPUT' || comp.type === 'CLOCK') {
@@ -524,7 +528,7 @@
             else textEl.textContent = 'OUTPUT';
             group.appendChild(textEl);
             
-            // Nháy đúp (Double click Desktop)
+            // Nháy đúp Desktop -> Đổi Input
             if (comp.type === 'INPUT') {
                 group.addEventListener('dblclick', (e) => {
                     if (e.target.classList.contains('pin')) return; 
@@ -576,24 +580,28 @@
             
             offset.x = (clientX - ctm.e) / ctm.a - comp.x;
             offset.y = (clientY - ctm.f) / ctm.d - comp.y;
-            deleteZone.classList.add('active'); // Mở vùng xóa
+            deleteZone.classList.add('active');
         }
 
-        function startHoldTimer(e) {
+        // Kéo chuột cho Desktop
+        group.addEventListener('mousedown', (e) => {
+            if (e.button === 2) return; // Nếu chuột phải thì bỏ qua (để xóa)
+            initDrag(e);
+        });
+
+        // Cảm ứng Mobile (Chạm + Kéo + Giữ để Xoay)
+        group.addEventListener('touchstart', (e) => {
             initDrag(e);
             comp.longPressTimer = setTimeout(() => { 
                 rotateComponent(comp); 
-                draggedElement = null; // Xoay xong thì hủy lệnh drag
+                draggedElement = null; // Xoay xong hủy kéo
                 deleteZone.classList.remove('active');
             }, 600);
-        }
-
-        group.addEventListener('mousedown', startHoldTimer);
-        group.addEventListener('touchstart', startHoldTimer, {passive: false});
+        }, {passive: false});
 
         group.addEventListener('mouseup', () => { if(comp.longPressTimer) clearTimeout(comp.longPressTimer); });
         
-        // Xử lý Double Tap Mobile (Đổi input)
+        // Nháy đúp 2 lần chạm (Mobile)
         group.addEventListener('touchend', (e) => {
             if(comp.longPressTimer) clearTimeout(comp.longPressTimer);
             let currentTime = new Date().getTime();
@@ -620,9 +628,8 @@
             const clientX = e.clientX !== undefined ? e.clientX : e.touches[0].clientX;
             const clientY = e.clientY !== undefined ? e.clientY : e.touches[0].clientY;
             
-            // Nếu người dùng kéo đi lệch quá 5px, ta hủy lệnh xoay 0.6 giây
-            if (Math.abs(clientX - draggedElement.dragStartClientX) > 5 || 
-                Math.abs(clientY - draggedElement.dragStartClientY) > 5) {
+            // Hủy giữ xoay nếu bị trượt ngón tay quá 5px
+            if (Math.abs(clientX - draggedElement.dragStartClientX) > 5 || Math.abs(clientY - draggedElement.dragStartClientY) > 5) {
                 if(draggedElement.longPressTimer) clearTimeout(draggedElement.longPressTimer);
             }
 
@@ -681,12 +688,17 @@
 
     function removeWireObj(wireObj) {
         const targetComp = components.find(c => c.id === wireObj.to.compId);
-        if (targetComp) targetComp.inputs[wireObj.to.pinIndex] = null;
+        if (targetComp) {
+            targetComp.inputs[wireObj.to.pinIndex] = targetComp.inputs[wireObj.to.pinIndex].filter(w => w !== wireObj);
+        }
         wireObj.path.remove(); wires = wires.filter(w => w !== wireObj); simulate(); saveState("Xóa dây");
     }
 
     function createWire(from, to, doSave = true) {
-        wires = wires.filter(w => { if (w.to.compId === to.compId && w.to.pinIndex === to.pinIndex) { w.path.remove(); return false; } return true; });
+        // Chặn vẽ 2 dây y hệt đè lên nhau
+        const duplicate = wires.find(w => w.from.compId === from.compId && w.from.pinIndex === from.pinIndex && w.to.compId === to.compId && w.to.pinIndex === to.pinIndex);
+        if (duplicate) return;
+
         const wire = { from, to, path: document.createElementNS("http://www.w3.org/2000/svg", "path"), state: false };
         wire.path.setAttribute("class", "wire");
         wire.path.addEventListener('contextmenu', (e) => { e.preventDefault(); removeWireObj(wire); });
@@ -694,7 +706,10 @@
             let t = new Date().getTime(); if (t - (wire.lastTap || 0) < 400 && t - (wire.lastTap || 0) > 0) { removeWireObj(wire); e.preventDefault(); } wire.lastTap = t;
         });
         wiresGroup.appendChild(wire.path); wires.push(wire);
-        components.find(c => c.id === to.compId).inputs[to.pinIndex] = wire;
+        
+        // Thêm mảng chứa dây nối (để tiếp nhận đa đầu vào)
+        components.find(c => c.id === to.compId).inputs[to.pinIndex].push(wire);
+        
         updateWires(); simulate(); if(doSave) saveState("Nối dây");
     }
 
@@ -728,7 +743,10 @@
         while(changed && iterations < 100) {
             changed = false;
             components.forEach(comp => {
-                let oldVal = comp.value; let inVals = comp.inputs.map(w => w ? w.state : false);
+                let oldVal = comp.value; 
+                // Xử lý đa cổng vào: Nếu có nhiều dây, dùng logic OR (some)
+                let inVals = comp.inputs.map(wireArray => wireArray.some(w => w.state));
+
                 switch(comp.type) {
                     case 'VDD': comp.value = true; break;
                     case 'GND': comp.value = false; break;
