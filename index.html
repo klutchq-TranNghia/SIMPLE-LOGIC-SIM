@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mô Phỏng Cổng Logic IEEE</title>
+    <title>Mô Phỏng Cổng Logic</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -104,11 +104,11 @@
             pointer-events: none !important; user-select: none !important; -webkit-user-select: none !important; 
         }
         
-        .pin { cursor: crosshair; stroke: #333; stroke-width: 2.5; transition: all 0.2s; }
+        .pin { cursor: crosshair; stroke: #333; stroke-width: 2; transition: all 0.2s; }
         .pin-in { fill: #2ecc71; }
         .pin-out { fill: #e74c3c; }
-        .pin:hover { r: 11; stroke-width: 3; }
-        .pin.selected { stroke: #f1c40f; stroke-width: 4; r: 10; filter: drop-shadow(0px 0px 4px rgba(241, 196, 15, 0.8)); }
+        .pin:hover { r: 8; stroke-width: 2.5; }
+        .pin.selected { stroke: #f1c40f; stroke-width: 3; r: 7; filter: drop-shadow(0px 0px 4px rgba(241, 196, 15, 0.8)); }
         
         .wire { fill: none; stroke: #444; stroke-width: 4.5; pointer-events: stroke; cursor: pointer; transition: stroke-width 0.2s, stroke 0.2s; }
         .wire:hover { stroke-width: 7; stroke: #666; }
@@ -126,7 +126,7 @@
             .gates-group { flex-wrap: wrap; margin-left: 0; width: 100%; justify-content: flex-start; gap: 4px; padding-top: 4px; border-top: 1px solid #34495e; }
             .guide-text { display: none; }
             .drag-btn { padding: 8px 10px; font-size: 12px; flex-grow: 1; text-align: center; }
-            .pin { stroke-width: 3; }
+            .pin { stroke-width: 2.5; }
             /* Vùng chạm Hitbox dây to hơn trên Mobile */
             .wire { stroke-width: 18px; }
             .separator { display: none; }
@@ -432,18 +432,24 @@
         else saveState("Bắt đầu");
     });
 
+    // --- Tính toán khoảng cách (Pin Y) để chân xa nhau hơn ---
+    function getPinY(config, pinIndex) {
+        if (config.in === 1) return config.height / 2;
+        if (config.in === 7) return config.height * (pinIndex + 1) / 8;
+        // Tăng khoảng cách cho 2 inputs (đẩy ra rìa thêm, cách nhau ~20px)
+        return config.height / 2 + (pinIndex === 0 ? -10 : 10);
+    }
+
     // --- Xử lý Phím (Xóa Backspace/Del, Xoay R, Hoàn tác) ---
     window.addEventListener('keydown', (e) => {
         if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undo(); }
         if (e.ctrlKey && e.key === 'y') { e.preventDefault(); redo(); }
         
-        // Phím R để xoay (ưu tiên chọn cổng trước, nếu không có thì xoay cổng đang hover)
         if ((e.key === 'r' || e.key === 'R')) {
             if (selectedObj && selectedObj.type === 'gate') rotateComponent(selectedObj.obj);
             else if (hoveredComponent) rotateComponent(hoveredComponent);
         }
 
-        // Xóa bằng phím Backspace hoặc Delete
         if (e.key === 'Backspace' || e.key === 'Delete') {
             if (selectedObj) {
                 if (selectedObj.type === 'gate') {
@@ -478,7 +484,7 @@
                 createWire(fromPin, toPin);
                 
                 if (connectingFrom.type === 'out') {
-                    // Không clearPinSelection()
+                    // Không clearPinSelection() để cắm tiếp cổng đỏ
                 } else {
                     clearPinSelection();
                 }
@@ -561,7 +567,7 @@
         group.addEventListener('mouseleave', () => { if(hoveredComponent === comp) hoveredComponent = null; });
         group.innerHTML = config.svg;
 
-        // Vô hiệu hóa chuột phải đối với linh kiện (đã chuyển sang dùng phím Del)
+        // Bỏ xóa bằng Chuột phải ở đây để chuyển sang dùng phím (người dùng yêu cầu)
         group.addEventListener('contextmenu', (e) => { e.preventDefault(); });
 
         let textEl = null;
@@ -575,7 +581,6 @@
             else textEl.textContent = 'OUTPUT';
             group.appendChild(textEl);
             
-            // Nháy đúp Desktop -> Đổi Input
             if (comp.type === 'INPUT') {
                 group.addEventListener('dblclick', (e) => {
                     if (e.target.classList.contains('pin')) return; 
@@ -594,10 +599,10 @@
         }
 
         for (let i = 0; i < config.in; i++) {
-            const pinY = config.height * (i + 1) / (config.in + 1);
+            const pinY = getPinY(config, i);
             const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
             circle.setAttribute("class", "pin pin-in");
-            circle.setAttribute("cx", 0); circle.setAttribute("cy", pinY); circle.setAttribute("r", 9); 
+            circle.setAttribute("cx", 0); circle.setAttribute("cy", pinY); circle.setAttribute("r", 6); // R=6
             const handlePin = (e) => { e.stopPropagation(); handlePinClick(e, comp.id, 'in', i, circle); };
             circle.addEventListener('mousedown', handlePin);
             circle.addEventListener('touchstart', (e) => { e.preventDefault(); handlePin(e); }, {passive: false});
@@ -605,9 +610,10 @@
         }
 
         if (config.out > 0) {
+            const pinY = getPinY(config, 0);
             const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
             circle.setAttribute("class", "pin pin-out");
-            circle.setAttribute("cx", config.width); circle.setAttribute("cy", config.height / 2); circle.setAttribute("r", 9); 
+            circle.setAttribute("cx", config.width); circle.setAttribute("cy", pinY); circle.setAttribute("r", 6); // R=6
             const handlePinOut = (e) => { e.stopPropagation(); handlePinClick(e, comp.id, 'out', null, circle); };
             circle.addEventListener('mousedown', handlePinOut);
             circle.addEventListener('touchstart', (e) => { e.preventDefault(); handlePinOut(e); }, {passive: false});
@@ -617,7 +623,6 @@
         function initDrag(e) {
             if (e.target.classList.contains('pin') || e.target.classList.contains('btn-push')) return;
             
-            // Chọn cổng khi click/chạm
             selectObject('gate', comp, group);
 
             draggedElement = comp;
@@ -632,31 +637,27 @@
             offset.x = (clientX - ctm.e) / ctm.a - comp.x;
             offset.y = (clientY - ctm.f) / ctm.d - comp.y;
             
-            // Mở vùng xóa Đỏ chỉ trên Mobile (cảm ứng)
             if (e.type === 'touchstart') {
                 deleteZone.classList.add('active');
             }
         }
 
-        // Kéo chuột cho Desktop
         group.addEventListener('mousedown', (e) => {
             if (e.button === 2) return; 
             initDrag(e);
         });
 
-        // Cảm ứng Mobile (Chạm + Kéo + Giữ để Xoay)
         group.addEventListener('touchstart', (e) => {
             initDrag(e);
             comp.longPressTimer = setTimeout(() => { 
                 rotateComponent(comp); 
-                draggedElement = null; // Xoay xong hủy kéo
+                draggedElement = null; 
                 deleteZone.classList.remove('active');
             }, 600);
         }, {passive: false});
 
         group.addEventListener('mouseup', () => { if(comp.longPressTimer) clearTimeout(comp.longPressTimer); });
         
-        // Nháy đúp 2 lần chạm (Mobile)
         group.addEventListener('touchend', (e) => {
             if(comp.longPressTimer) clearTimeout(comp.longPressTimer);
             let currentTime = new Date().getTime();
@@ -676,7 +677,7 @@
         simulate(); saveState("Đổi trạng thái INPUT");
     }
 
-    // Gắn sự kiện Move/Up lên window để không bao giờ bị "kẹt" ra ngoài
+    // --- Chuyển các sự kiện kéo thả ra Window để không bị kẹt khi ra ngoài màn hình ---
     function handleGlobalMove(e) {
         if (draggedElement) {
             if(e.type === 'touchmove') e.preventDefault();
@@ -720,7 +721,7 @@
         if (draggedElement) {
             if(draggedElement.longPressTimer) clearTimeout(draggedElement.longPressTimer);
             
-            // Chỉ xét thả vào vùng đỏ để xóa đối với Mobile (Touch)
+            // Chỉ bắt buộc xóa khi dùng cảm ứng (Mobile)
             if (e.type === 'touchend') {
                 const dropY = e.changedTouches ? e.changedTouches[0].clientY : 0;
                 if (dropY < document.getElementById('toolbar').offsetHeight + 10) { 
@@ -757,14 +758,12 @@
         const wire = { from, to, path: document.createElementNS("http://www.w3.org/2000/svg", "path"), state: false };
         wire.path.setAttribute("class", "wire");
         
-        // Click để chọn dây -> ấn Delete để xóa
         wire.path.addEventListener('mousedown', (e) => { e.stopPropagation(); selectObject('wire', wire, wire.path); });
         wire.path.addEventListener('touchstart', (e) => { e.stopPropagation(); selectObject('wire', wire, wire.path); }, {passive: false});
 
-        // Vẫn giữ Chuột phải để xóa dây (Desktop)
+        // Chuột phải xóa nhanh dây (Yêu cầu giữ lại)
         wire.path.addEventListener('contextmenu', (e) => { e.preventDefault(); removeWireObj(wire); });
         
-        // Vẫn giữ Nhấp đúp để xóa dây (Mobile)
         wire.path.addEventListener('touchend', (e) => {
             let t = new Date().getTime(); if (t - (wire.lastTap || 0) < 400 && t - (wire.lastTap || 0) > 0) { removeWireObj(wire); e.preventDefault(); } wire.lastTap = t;
         });
@@ -779,7 +778,7 @@
         const config = gateConfig[comp.type];
         const cx = config.width / 2; const cy = config.height / 2;
         let px = isOutput ? config.width : 0;
-        let py = isOutput ? config.height / 2 : config.height * (pinIndex + 1) / (config.in + 1);
+        let py = isOutput ? getPinY(config, 0) : getPinY(config, pinIndex);
         let tx = px - cx, ty = py - cy;
         let rx = tx, ry = ty;
         if (comp.rotation === 90) { rx = -ty; ry = tx; }
