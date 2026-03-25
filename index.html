@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mô Phỏng Cổng Logic</title>
+    <title>Mô Phỏng Cổng Logic IEEE</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -94,7 +94,11 @@
         .terminal-warn { color: #f1c40f; }
         .terminal-err { color: #e74c3c; }
 
-        .gate { cursor: move; }
+        /* Vùng chọn (Selection) */
+        .selected-gate { filter: drop-shadow(0px 0px 8px #3498db) !important; }
+        .selected-wire { stroke: #3498db !important; filter: drop-shadow(0px 0px 5px #3498db); }
+
+        .gate { cursor: move; transition: filter 0.2s; }
         .gate text, .gate-text { 
             font-size: 13px; font-weight: bold; font-family: monospace; 
             pointer-events: none !important; user-select: none !important; -webkit-user-select: none !important; 
@@ -123,7 +127,8 @@
             .guide-text { display: none; }
             .drag-btn { padding: 8px 10px; font-size: 12px; flex-grow: 1; text-align: center; }
             .pin { stroke-width: 3; }
-            .wire { stroke-width: 6; }
+            /* Vùng chạm Hitbox dây to hơn trên Mobile */
+            .wire { stroke-width: 18px; }
             .separator { display: none; }
             .dropdown { flex-grow: 1; }
             .dropbtn { width: 100%; text-align: center; }
@@ -148,7 +153,7 @@
     <input type="file" id="fileInput" style="display:none" accept=".json" onchange="loadCircuit(event)">
 
     <span class="guide-text">
-        💻 Chuột Phải: Xóa | Phím R: Xoay | Nháy đúp: Input || 📱 Kéo thả đỏ: Xóa | Giữ 0.6s: Xoay
+        💻 Chọn + Del/Backspace: Xóa | Phím R: Xoay || 📱 Kéo thả đỏ: Xóa | Giữ 0.6s: Xoay
     </span>
     
     <div class="gates-group">
@@ -230,6 +235,26 @@
     let components = [], wires = [];
     let draggedElement = null, dragStartPos = null, offset = { x: 0, y: 0 };
     let connectingFrom = null, hoveredComponent = null;
+    
+    // --- Quản lý Chọn (Select) Linh kiện / Dây ---
+    let selectedObj = null; 
+
+    function selectObject(type, obj, el) {
+        clearObjectSelection();
+        selectedObj = { type, obj, el };
+        if (type === 'gate') el.classList.add('selected-gate');
+        if (type === 'wire') el.classList.add('selected-wire');
+    }
+
+    function clearObjectSelection() {
+        if (selectedObj) {
+            if (selectedObj.el) {
+                selectedObj.el.classList.remove('selected-gate');
+                selectedObj.el.classList.remove('selected-wire');
+            }
+            selectedObj = null;
+        }
+    }
 
     // --- Pan & Zoom ---
     let currentScale = 1;
@@ -369,10 +394,9 @@
     function loadCircuitFromJSON(jsonStr, doLog = true) {
         const data = JSON.parse(jsonStr);
         componentsGroup.innerHTML = ''; wiresGroup.innerHTML = '';
-        components = []; wires = []; clearSelection();
+        components = []; wires = []; clearPinSelection(); clearObjectSelection();
         data.components.forEach(c => {
             const config = gateConfig[c.type];
-            // Khởi tạo mảng chứa nhiều dây cho mỗi chân input
             const comp = { id: c.id, type: c.type, x: c.x, y: c.y, inputs: Array.from({length: config.in}, () => []), value: c.value, rotation: c.rotation || 0 };
             components.push(comp); renderComponent(comp, config);
         });
@@ -395,6 +419,7 @@
         if(confirm("Xóa toàn bộ mạch?")) {
             componentsGroup.innerHTML = ''; wiresGroup.innerHTML = '';
             components = []; wires = []; currentScale = 1; currentPan = {x:0, y:0}; updateWorkspace();
+            clearObjectSelection();
             localStorage.removeItem('autosave_circuit'); saveState("Xóa toàn bộ");
         }
     }
@@ -407,11 +432,28 @@
         else saveState("Bắt đầu");
     });
 
-    // Phím R để xoay (Desktop)
+    // --- Xử lý Phím (Xóa Backspace/Del, Xoay R, Hoàn tác) ---
     window.addEventListener('keydown', (e) => {
         if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undo(); }
         if (e.ctrlKey && e.key === 'y') { e.preventDefault(); redo(); }
-        if ((e.key === 'r' || e.key === 'R') && hoveredComponent) rotateComponent(hoveredComponent);
+        
+        // Phím R để xoay (ưu tiên chọn cổng trước, nếu không có thì xoay cổng đang hover)
+        if ((e.key === 'r' || e.key === 'R')) {
+            if (selectedObj && selectedObj.type === 'gate') rotateComponent(selectedObj.obj);
+            else if (hoveredComponent) rotateComponent(hoveredComponent);
+        }
+
+        // Xóa bằng phím Backspace hoặc Delete
+        if (e.key === 'Backspace' || e.key === 'Delete') {
+            if (selectedObj) {
+                if (selectedObj.type === 'gate') {
+                    deleteComponentObj(selectedObj.obj, selectedObj.el);
+                } else if (selectedObj.type === 'wire') {
+                    removeWireObj(selectedObj.obj);
+                }
+                clearObjectSelection();
+            }
+        }
     });
 
     function rotateComponent(comp) {
@@ -424,7 +466,7 @@
     }
 
     function handlePinClick(e, compId, type, pinIndex, pinElement) {
-        if (connectingFrom && connectingFrom.element === pinElement) { clearSelection(); return; }
+        if (connectingFrom && connectingFrom.element === pinElement) { clearPinSelection(); return; }
         
         if (!connectingFrom) {
             connectingFrom = { compId, type, pinIndex, element: pinElement };
@@ -435,11 +477,10 @@
                 const toPin = connectingFrom.type === 'in' ? connectingFrom : { compId, type, pinIndex, element: pinElement };
                 createWire(fromPin, toPin);
                 
-                // Giữ lại lựa chọn nếu đang cắm từ nguồn ra (để chia nhánh 1 OUT -> nhiều IN dễ dàng)
                 if (connectingFrom.type === 'out') {
-                    // Không clearSelection()
+                    // Không clearPinSelection()
                 } else {
-                    clearSelection();
+                    clearPinSelection();
                 }
             } else {
                 connectingFrom.element.classList.remove('selected');
@@ -449,18 +490,26 @@
         }
     }
 
-    function clearSelection() {
+    function clearPinSelection() {
         if (connectingFrom) { connectingFrom.element.classList.remove('selected'); connectingFrom = null; }
     }
     
-    // Pan / Zoom
+    // Xử lý Pan / Zoom / Click ra ngoài màn hình trống
     svg.addEventListener('mousedown', (e) => { 
         if(e.button === 2) return; // Không pan bằng chuột phải
-        if(e.target === svg) { clearSelection(); isPanning = true; startPan = { x: e.clientX - currentPan.x, y: e.clientY - currentPan.y }; }
+        if(e.target === svg || e.target.id === 'workspace') { 
+            clearPinSelection(); 
+            clearObjectSelection(); 
+            isPanning = true; 
+            startPan = { x: e.clientX - currentPan.x, y: e.clientY - currentPan.y }; 
+        }
     });
     
     svg.addEventListener('touchstart', (e) => { 
-        if(e.target === svg || e.target.id === 'canvas' || e.target.id === 'workspace') clearSelection();
+        if(e.target === svg || e.target.id === 'canvas' || e.target.id === 'workspace') {
+            clearPinSelection(); 
+            clearObjectSelection();
+        }
         if(e.touches.length === 2) {
             initialPinchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
             initialScale = currentScale;
@@ -496,8 +545,9 @@
             return true;
         });
         group.remove(); components = components.filter(c => c.id !== comp.id);
-        if (connectingFrom && connectingFrom.compId === comp.id) clearSelection();
+        if (connectingFrom && connectingFrom.compId === comp.id) clearPinSelection();
         if (hoveredComponent === comp) hoveredComponent = null;
+        if (selectedObj && selectedObj.obj === comp) clearObjectSelection();
         simulate(); saveState(`Xóa cổng ${comp.type}`);
     }
 
@@ -511,11 +561,8 @@
         group.addEventListener('mouseleave', () => { if(hoveredComponent === comp) hoveredComponent = null; });
         group.innerHTML = config.svg;
 
-        // Chuột phải (Desktop) -> Xóa linh kiện
-        group.addEventListener('contextmenu', (e) => { 
-            e.preventDefault(); 
-            deleteComponentObj(comp, group); 
-        });
+        // Vô hiệu hóa chuột phải đối với linh kiện (đã chuyển sang dùng phím Del)
+        group.addEventListener('contextmenu', (e) => { e.preventDefault(); });
 
         let textEl = null;
         if (comp.type === 'INPUT' || comp.type === 'OUTPUT' || comp.type === 'CLOCK') {
@@ -569,6 +616,10 @@
 
         function initDrag(e) {
             if (e.target.classList.contains('pin') || e.target.classList.contains('btn-push')) return;
+            
+            // Chọn cổng khi click/chạm
+            selectObject('gate', comp, group);
+
             draggedElement = comp;
             dragStartPos = { x: comp.x, y: comp.y };
             const ctm = workspace.getScreenCTM();
@@ -580,12 +631,16 @@
             
             offset.x = (clientX - ctm.e) / ctm.a - comp.x;
             offset.y = (clientY - ctm.f) / ctm.d - comp.y;
-            deleteZone.classList.add('active');
+            
+            // Mở vùng xóa Đỏ chỉ trên Mobile (cảm ứng)
+            if (e.type === 'touchstart') {
+                deleteZone.classList.add('active');
+            }
         }
 
         // Kéo chuột cho Desktop
         group.addEventListener('mousedown', (e) => {
-            if (e.button === 2) return; // Nếu chuột phải thì bỏ qua (để xóa)
+            if (e.button === 2) return; 
             initDrag(e);
         });
 
@@ -621,6 +676,7 @@
         simulate(); saveState("Đổi trạng thái INPUT");
     }
 
+    // Gắn sự kiện Move/Up lên window để không bao giờ bị "kẹt" ra ngoài
     function handleGlobalMove(e) {
         if (draggedElement) {
             if(e.type === 'touchmove') e.preventDefault();
@@ -628,7 +684,6 @@
             const clientX = e.clientX !== undefined ? e.clientX : e.touches[0].clientX;
             const clientY = e.clientY !== undefined ? e.clientY : e.touches[0].clientY;
             
-            // Hủy giữ xoay nếu bị trượt ngón tay quá 5px
             if (Math.abs(clientX - draggedElement.dragStartClientX) > 5 || Math.abs(clientY - draggedElement.dragStartClientY) > 5) {
                 if(draggedElement.longPressTimer) clearTimeout(draggedElement.longPressTimer);
             }
@@ -665,9 +720,12 @@
         if (draggedElement) {
             if(draggedElement.longPressTimer) clearTimeout(draggedElement.longPressTimer);
             
-            const dropY = e.clientY !== undefined ? e.clientY : (e.changedTouches ? e.changedTouches[0].clientY : 0);
-            if (dropY < document.getElementById('toolbar').offsetHeight + 10) { 
-                deleteComponentObj(draggedElement, document.getElementById(draggedElement.id));
+            // Chỉ xét thả vào vùng đỏ để xóa đối với Mobile (Touch)
+            if (e.type === 'touchend') {
+                const dropY = e.changedTouches ? e.changedTouches[0].clientY : 0;
+                if (dropY < document.getElementById('toolbar').offsetHeight + 10) { 
+                    deleteComponentObj(draggedElement, document.getElementById(draggedElement.id));
+                }
             } else if (dragStartPos && (Math.abs(draggedElement.x - dragStartPos.x) > 1 || Math.abs(draggedElement.y - dragStartPos.y) > 1)) {
                 saveState("Di chuyển");
             }
@@ -678,36 +736,40 @@
         if(e.type === 'touchend' && e.touches.length < 2) initialPinchDist = null;
     }
 
-    svg.addEventListener('mousemove', handleGlobalMove); svg.addEventListener('touchmove', handleGlobalMove, {passive: false});
-    svg.addEventListener('mouseup', handleGlobalEnd); svg.addEventListener('touchend', handleGlobalEnd);
-    svg.addEventListener('mouseleave', () => { 
-        if(draggedElement && draggedElement.longPressTimer) clearTimeout(draggedElement.longPressTimer);
-        draggedElement = null; clearSelection(); isPanning = false; deleteZone.classList.remove('active'); 
-    });
-    svg.addEventListener('touchcancel', handleGlobalEnd);
+    window.addEventListener('mousemove', handleGlobalMove); 
+    window.addEventListener('touchmove', handleGlobalMove, {passive: false});
+    window.addEventListener('mouseup', handleGlobalEnd); 
+    window.addEventListener('touchend', handleGlobalEnd);
 
     function removeWireObj(wireObj) {
         const targetComp = components.find(c => c.id === wireObj.to.compId);
         if (targetComp) {
             targetComp.inputs[wireObj.to.pinIndex] = targetComp.inputs[wireObj.to.pinIndex].filter(w => w !== wireObj);
         }
+        if (selectedObj && selectedObj.obj === wireObj) clearObjectSelection();
         wireObj.path.remove(); wires = wires.filter(w => w !== wireObj); simulate(); saveState("Xóa dây");
     }
 
     function createWire(from, to, doSave = true) {
-        // Chặn vẽ 2 dây y hệt đè lên nhau
         const duplicate = wires.find(w => w.from.compId === from.compId && w.from.pinIndex === from.pinIndex && w.to.compId === to.compId && w.to.pinIndex === to.pinIndex);
         if (duplicate) return;
 
         const wire = { from, to, path: document.createElementNS("http://www.w3.org/2000/svg", "path"), state: false };
         wire.path.setAttribute("class", "wire");
+        
+        // Click để chọn dây -> ấn Delete để xóa
+        wire.path.addEventListener('mousedown', (e) => { e.stopPropagation(); selectObject('wire', wire, wire.path); });
+        wire.path.addEventListener('touchstart', (e) => { e.stopPropagation(); selectObject('wire', wire, wire.path); }, {passive: false});
+
+        // Vẫn giữ Chuột phải để xóa dây (Desktop)
         wire.path.addEventListener('contextmenu', (e) => { e.preventDefault(); removeWireObj(wire); });
+        
+        // Vẫn giữ Nhấp đúp để xóa dây (Mobile)
         wire.path.addEventListener('touchend', (e) => {
             let t = new Date().getTime(); if (t - (wire.lastTap || 0) < 400 && t - (wire.lastTap || 0) > 0) { removeWireObj(wire); e.preventDefault(); } wire.lastTap = t;
         });
+
         wiresGroup.appendChild(wire.path); wires.push(wire);
-        
-        // Thêm mảng chứa dây nối (để tiếp nhận đa đầu vào)
         components.find(c => c.id === to.compId).inputs[to.pinIndex].push(wire);
         
         updateWires(); simulate(); if(doSave) saveState("Nối dây");
@@ -744,7 +806,6 @@
             changed = false;
             components.forEach(comp => {
                 let oldVal = comp.value; 
-                // Xử lý đa cổng vào: Nếu có nhiều dây, dùng logic OR (some)
                 let inVals = comp.inputs.map(wireArray => wireArray.some(w => w.state));
 
                 switch(comp.type) {
